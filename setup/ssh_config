@@ -1,0 +1,8 @@
+Host lmbcenter
+    HostName lmbcenter
+    ProxyJump cca
+    Port 22
+
+Host cca
+    HostName ccalogin.informatik.uni-freiburg.de     
+    Port 22

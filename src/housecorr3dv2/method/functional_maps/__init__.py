@@ -1,0 +1,1 @@
+from housecorr3dv2.method.functional_maps.method import FunctionalMapsMethod

@@ -1,0 +1,18 @@
+venv/
+venv*/
+wandb/
+tables/
+.gs.txt
+checkpoints/
+uncond_text.pt
+*.egg-info/
+*.egg
+__pycache__/
+*.pyc
+
+
+# credentials
+config/platform/credentials/custom/default_custom.yaml
+config/platform/custom/local_custom.yaml
+config/platform/custom/slurm_custom.yaml
+config/platform/local_akopyane.yaml

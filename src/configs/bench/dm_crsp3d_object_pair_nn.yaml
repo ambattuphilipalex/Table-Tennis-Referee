@@ -1,0 +1,45 @@
+defaults:
+  - platform: default
+  - dataset: dm
+
+#platform:
+#  deps:
+#    - diff3f     # available: densematcher, diff3f
+#    #                   # creates venv_py310_cu124_torch26_densematcher and installs deps there
+
+method:
+  class_name: DefaultMethod
+
+task:
+  class_name: Crsp3DNNTask
+
+bench:
+  class_name: ObjectPairBench
+  batch_size: 4
+
+wandb:
+  project: hc3d_eval
+
+dataset:
+  class_name: DenseMatcher
+  item_type: object_pair
+  mesh_type: "mc16_vuni100_r256_fdinov2s"
+
+  subsets:
+  - test
+
+  categories:       # null = all categories; list strings to restrict, e.g.:
+    - animals
+  #  # - mug
+
+  filter_has_kpts: false
+  filter_is_real: false
+
+  object_modalities:
+    - mesh
+    - obj_ncds0c_tform4x4_obj
+    - obj_kpts3d
+    - obj_verts_part_id
+    - category
+    - verts3d
+    - verts3d_feats

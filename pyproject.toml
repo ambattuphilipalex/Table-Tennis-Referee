@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "housecorr3dv2"
+version = "0.1.0"
+requires-python = ">=3.8"
+dependencies = [
+    "torch>=2.0",
+    "PyYAML>=6.0",
+    "omegaconf",
+]
+
+[project.scripts]
+hc3d = "housecorr3dv2.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

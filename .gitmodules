@@ -1,0 +1,6 @@
+[submodule "third_party/o3b"]
+	path = third_party/o3b
+	url = https://github.com/GenIntel/o3b.git
+[submodule "third_party/od3d"]
+	path = third_party/od3d
+	url = https://github.com/GenIntel/od3d.git

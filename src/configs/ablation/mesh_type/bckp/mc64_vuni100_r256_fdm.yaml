@@ -1,0 +1,9 @@
+
+platform:
+  deps:
+    - densematcher     # available: densematcher, diff3f
+    #                   # creates venv_py310_cu124_torch26_densematcher and installs deps there
+
+
+dataset:
+  mesh_type: "mc64_vuni100_r256_fdm"
