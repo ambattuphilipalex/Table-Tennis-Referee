@@ -9,6 +9,7 @@ uncond_text.pt
 *.egg
 __pycache__/
 *.pyc
+.DS_Store
 
 
 # credentials
@@ -16,3 +17,7 @@ config/platform/credentials/custom/default_custom.yaml
 config/platform/custom/local_custom.yaml
 config/platform/custom/slurm_custom.yaml
 config/platform/local_akopyane.yaml
+
+
+# third-party dependencies
+third_party/
