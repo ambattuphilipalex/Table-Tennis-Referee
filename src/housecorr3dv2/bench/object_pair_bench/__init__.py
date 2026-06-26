@@ -1,1 +1,0 @@
-from housecorr3dv2.bench.object_pair_bench.bench import ObjectPairBench
