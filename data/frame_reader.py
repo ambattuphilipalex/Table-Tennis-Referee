@@ -6,6 +6,7 @@ import json
 from torch.utils.data import Dataset
 
 
+
 VIDEO_PATH = "/Users/philipalexambattu/Documents/DL Lab Final/Table Tennis Referee/datasets/OpenTT/videos/train/game_1.mp4"
 BALL_JSON = "/Users/philipalexambattu/Documents/DL Lab Final/Table Tennis Referee/datasets/OpenTT/annotations/train/game_1_ball.json"
 
@@ -56,14 +57,14 @@ class BallFrameDataset(Dataset):
         ny = selected[2]
         frame = read_frame(frame_no)        
         ball_co_ordinates = torch.tensor([nx,ny],dtype=torch.float32)
-        return frame, ball_co_ordinates
+        return frame, ball_co_ordinates, frame_no
 
 
 if __name__ == "__main__":
     
     d = BallFrameDataset()
     print(len(d))
-    frame, ball = d[0]
+    frame, ball, frame_no = d[0]
     print(frame.shape, ball)
     
     
