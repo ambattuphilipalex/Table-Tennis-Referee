@@ -112,6 +112,7 @@ if __name__ == "__main__":
         
         with open(cache_dir/"index.json", "w") as  f:
             json.dump(frame_track,f)
+            print(f"{game}: cached {len(frame_track)} frames in {cache_dir}")
             
         # one = torch.load(cache_dir / f"{frame_track[0]}.pt")
         # print("tokens",one["tokens"].shape)   
