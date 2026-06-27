@@ -16,8 +16,8 @@ elif torch.backends.mps.is_available():
 else:
     device = "cpu"
 
-
-D_ROOT = "/Users/philipalexambattu/Documents/DL Lab Final/Table Tennis Referee/datasets/OpenTT"
+D_V_ROOT = "/home/shared/datasets/OpenTT"
+D_A_ROOT = "/home/shared/Table-Tennis-Referee/data/OpenTT"
 GAMES = ["game_1", "game_2", "game_3", "game_4", "game_5"]
 
 MEAN = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
@@ -92,8 +92,8 @@ if __name__ == "__main__":
          
     for game in GAMES:
         
-        video_path = f"{D_ROOT}/videos/train/{game}.mp4"
-        ball_json = f"{D_ROOT}/annotations/train/{game}_ball.json"
+        video_path = f"{D_V_ROOT}/videos/train/{game}.mp4"
+        ball_json = f"{D_A_ROOT}//annotations/train/{game}_ball.json"
         d = BallFrameDataset(video_path,ball_json)
 
         cache_dir = Path(F"./dino_cache/{game}")
