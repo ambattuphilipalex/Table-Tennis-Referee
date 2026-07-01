@@ -62,7 +62,7 @@ class BallFrameDataset(Dataset):
             ball_json = json.load(f)
         self.items = []
         for key,val in ball_json.items():
-            if val['x'] == -1:
+            if val['x'] == -1 or val['y'] == -1:
                 continue
             nx = val['x']/self.width
             ny = val['y']/self.height
