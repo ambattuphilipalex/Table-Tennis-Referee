@@ -5,7 +5,7 @@ import json
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from pathlib import Path
-
+import matplotlib.pyplot as plt
 
 # device = "mps"
 
@@ -19,6 +19,10 @@ else:
 DATA_ROOT = Path(__file__).resolve().parents[1] / "data"
 
 D_AV_ROOT = DATA_ROOT / "OpenTT"
+
+with open(f"{DATA_ROOT}/OpenTT_Preprocess/video_bboxes.json", "r") as f:
+    SBOX =json.load(f)
+
 
 GAMES = [("train", f"game_{i}") for i in range(1, 6)] + \
         [("test",  f"test_{i}") for i in range(1, 8)]
@@ -44,6 +48,8 @@ def read_frame(frame_no,video_path):
     if flag == False:
         raise ValueError(f"couldn't read frame {frame_no} from {video_path}")
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    x1,y1,x2,y2 = SBOX[Path(video_path).stem]["scoreboard"]
+    frame[y1:y2, x1:x2] = 0
     frame = cv2.resize(frame, (RES,RES))
     frame = frame.astype("float32")
     frame = frame / 255
@@ -96,7 +102,7 @@ if __name__ == "__main__":
     model = model.to(device)
 
     for split, game in GAMES:
-    
+        
         cache_dir = Path(f"{DATA_ROOT}/dino_cache/{game}")
         cache_dir.mkdir(parents=True, exist_ok=True)
         cache_path = cache_dir / "cache.pt"
