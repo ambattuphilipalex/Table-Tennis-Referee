@@ -5,7 +5,6 @@ import json
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from pathlib import Path
-import matplotlib.pyplot as plt
 
 # device = "mps"
 
@@ -114,15 +113,12 @@ if __name__ == "__main__":
         ball_json  = f"{D_AV_ROOT}/annotations/{split}/{game}_ball.json"
         d = BallFrameDataset(video_path, ball_json)
         M = len(d)
-        if M == 0:
-            print(f"{game}: no valid frames, skipping")
-            continue
+
 
         loader = DataLoader(d, batch_size=32, shuffle=False, num_workers=8)
 
         tokens = ball = frames = None      
         write = 0
-
         for frame, b, frame_no in loader:
             tok = frame2tokens(frame).to(torch.float16).cpu()
             bsz, N, D = tok.shape
