@@ -10,28 +10,24 @@ CACHE_ROOT = DATA_ROOT / "dino_cache"
 class CachedBallDataset(Dataset):
     def __init__(self, cache_path):
         blob = torch.load(cache_path, mmap=True, weights_only=False)
-        tokens = blob["tokens"]
-        ball = blob["ball"]
-        frames = blob["frames"]
+        self.tokens = blob["tokens"]        
+        self.ball = blob["ball"]
+        self.frames = blob["frames"]
         self.meta = blob.get("meta", {})
 
         game = cache_path.parent.name
         bad_path = cache_path.parents[2] / "bad_label_candidates" / f"{game}.json"
-        if bad_path.exists():
-            bad = set(json.load(open(bad_path)))
-            if bad:
-                keep = torch.tensor([int(f) not in bad for f in frames.tolist()])
-                tokens, ball, frames = tokens[keep], ball[keep], frames[keep]
-
-        self.tokens = tokens
-        self.ball = ball
-        self.frames = frames
+        bad = set(json.load(open(bad_path))) if bad_path.exists() else set()
+        self.idx = [i for i, f in enumerate(self.frames.tolist()) if int(f) not in bad]
+        if bad:
+            print(f"{game}: keeping {len(self.idx)}/{len(self.frames)} frames")
 
     def __len__(self):
-        return self.tokens.shape[0]
+        return len(self.idx)
 
     def __getitem__(self, i):
-        return self.tokens[i].float(), self.ball[i].float()
+        j = self.idx[i]
+        return self.tokens[j].float(), self.ball[j].float()
 
 
 def build_split(names, root=CACHE_ROOT):
