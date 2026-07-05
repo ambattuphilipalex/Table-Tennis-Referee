@@ -174,6 +174,10 @@ def main() -> None:
                             persistent_workers=workers > 0)
 
     model = BallHead().to(device)
+
+    for m in model.modules():
+        if isinstance(m, torch.nn.Dropout):
+            m.p = 0.1
     print(f"BallHead: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M params")
 
     opt = torch.optim.AdamW(param_groups(model, args.weight_decay), lr=args.lr)
