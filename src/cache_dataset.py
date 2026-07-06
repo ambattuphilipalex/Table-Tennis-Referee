@@ -10,22 +10,18 @@ CACHE_ROOT = DATA_ROOT / "dino_cache"
 class CachedBallDataset(Dataset):
     def __init__(self, cache_path):
         blob = torch.load(cache_path, mmap=True, weights_only=False)
-        tokens = blob["tokens"]
-        ball = blob["ball"]
-        frames = blob["frames"]
+        self.tokens = blob["tokens"]          # (M, N, D) fp16, stays memory-mapped
+        self.ball = blob["ball"]              # (M, 2)   fp32
+        self.frames = blob["frames"]          # (M,)     int64
         self.meta = blob.get("meta", {})
 
+        # build a keep-index list (do NOT index the big tensor -> avoids OOM)
         game = cache_path.parent.name
         bad_path = cache_path.parents[2] / "bad_label_candidates" / f"{game}.json"
-        if bad_path.exists():
-            bad = set(json.load(open(bad_path)))
-            if bad:
-                keep = torch.tensor([int(f) not in bad for f in frames.tolist()])
-                tokens, ball, frames = tokens[keep], ball[keep], frames[keep]
-
-        self.tokens = tokens
-        self.ball = ball
-        self.frames = frames
+        bad = set(json.load(open(bad_path))) if bad_path.exists() else set()
+        self.idx = [i for i, f in enumerate(self.frames.tolist()) if int(f) not in bad]
+        if bad:
+            print(f"{game}: keeping {len(self.idx)}/{len(self.frames)} frames")
 
     def __len__(self):
         return len(self.idx)
