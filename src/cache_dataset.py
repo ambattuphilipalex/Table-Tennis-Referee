@@ -15,7 +15,6 @@ class CachedBallDataset(Dataset):
         self.frames = blob["frames"]          # (M,)     int64
         self.meta = blob.get("meta", {})
 
-        # build a keep-index list (do NOT index the big tensor -> avoids OOM)
         game = cache_path.parent.name
         bad_path = cache_path.parents[2] / "bad_label_candidates" / f"{game}.json"
         bad = set(json.load(open(bad_path))) if bad_path.exists() else set()
@@ -39,3 +38,4 @@ def build_split(names, root=CACHE_ROOT):
             raise FileNotFoundError(f"No cache for {name!r} at {cache_path}")
         datasets.append(CachedBallDataset(cache_path))
     return ConcatDataset(datasets)
+
