@@ -84,11 +84,11 @@ def main() -> None:
     print(f"ckpt: {args.ckpt} (epoch {ckpt.get('epoch')})  device: {device}")
 
     pred_norm = predict(model, ds, device)
-    gt_norm = ds.ball.float()
+    gt_norm = ds.ball[ds.idx].float()
     errs = pixel_errors(pred_norm, gt_norm, wh)
     pred_px = denormalize(pred_norm, wh).numpy()
     gt_px = denormalize(gt_norm, wh).numpy()
-    frames = ds.frames.numpy()
+    frames = ds.frames[ds.idx].numpy()
     print(f"{args.game}: {len(ds)} cached frames, "
           f"mean err {errs.mean():.1f}px over the full game")
 

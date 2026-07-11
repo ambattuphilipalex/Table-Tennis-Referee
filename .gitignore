@@ -26,3 +26,6 @@ dino_cache/
 runs/
 
 data/OpenTT/videos
+
+data/bad_label_candidates
+data/bad_label_review
