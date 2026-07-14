@@ -4,14 +4,14 @@ import torch.nn as nn
 
 class ScorePredictor(nn.Module):
     def __init__(self, input_dim=387, hidden_dim=128, num_layers=2, num_classes=3,
-                 bidirectional=True, dropout=0.3):
+                 bidirectional=False, dropout=0.3):
         super().__init__()
         gru_dropout = dropout if num_layers > 1 else 0.0
         self.gru = nn.GRU(
             input_dim, hidden_dim, num_layers,
             batch_first=True, dropout=gru_dropout, bidirectional=bidirectional,
         )
-        out_dim = hidden_dim * 2
+        out_dim = hidden_dim * (2 if bidirectional else 1)
         self.norm = nn.LayerNorm(out_dim)
         self.head_dropout = nn.Dropout(dropout)
         self.fc = nn.Linear(out_dim, num_classes)

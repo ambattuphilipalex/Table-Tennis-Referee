@@ -25,7 +25,7 @@ def evaluate_model(model, dataset, gt_left_frames, gt_right_frames, device,
     model.eval()
     loader = DataLoader(dataset, batch_size=1, shuffle=False)
 
-    raw = []  # (frame, class, confidence)
+    raw = []
     for idx, (tokens, _) in enumerate(loader):
         start = dataset.window_starts[idx]
         last_valid_idx = dataset.valid_indices[start + dataset.seq_len - 1]
@@ -76,7 +76,6 @@ def evaluate_model(model, dataset, gt_left_frames, gt_right_frames, device,
                 if detections[j][2] > current[2]:
                     current = detections[j]
             j += 1
-        
         filtered_detections.append(current)
         i = j
     
@@ -84,7 +83,6 @@ def evaluate_model(model, dataset, gt_left_frames, gt_right_frames, device,
 
     left_points = sum(1 for d in detections if d[1] == 1)
     right_points = sum(1 for d in detections if d[1] == 2)
-
 
     hits = misses = 0
     matched_gt_frames = set()
