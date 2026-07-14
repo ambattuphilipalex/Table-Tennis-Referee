@@ -20,12 +20,12 @@ def load_gt_events(event_json_path):
 
 @torch.no_grad()
 def evaluate_model(model, dataset, gt_left_frames, gt_right_frames, device,
-                    tolerance=150, merge_window=120, verbose=True, min_confidence=0.0):
+                    tolerance=150, merge_window=90, verbose=True, min_confidence=0.0):
     was_training = model.training
     model.eval()
     loader = DataLoader(dataset, batch_size=1, shuffle=False)
 
-    raw = []  # (frame, class, confidence) for every above-threshold prediction
+    raw = []  # (frame, class, confidence)
     for idx, (tokens, _) in enumerate(loader):
         start = dataset.window_starts[idx]
         last_valid_idx = dataset.valid_indices[start + dataset.seq_len - 1]
@@ -33,7 +33,8 @@ def evaluate_model(model, dataset, gt_left_frames, gt_right_frames, device,
 
         xy = dataset.coords_dict.get(real_frame, [0.5, 0.0, 0.0])
         x, y = xy[0], xy[1]
-        if not (0.2 < x < 1.8 and 0.0 < y < 1.2): 
+        
+        if not (0.15 < x < 0.85 and 0.15 < y < 0.85):
             continue
 
         tokens = tokens.to(device).float()
@@ -48,26 +49,56 @@ def evaluate_model(model, dataset, gt_left_frames, gt_right_frames, device,
     detections = []
     for cls in (1, 2):
         cls_preds = sorted((r for r in raw if r[1] == cls), key=lambda r: r[0])
-        cluster = []
-        for r in cls_preds:
-            if cluster and r[0] - cluster[-1][0] > merge_window:
-                detections.append(max(cluster, key=lambda c: c[2]))
-                cluster = []
-            cluster.append(r)
+        if not cls_preds:
+            continue
+            
+        cluster = [cls_preds[0]]
+        for r in cls_preds[1:]:
+            if r[0] - cluster[-1][0] <= merge_window:
+                cluster.append(r)
+            else:
+                best = max(cluster, key=lambda c: c[2])
+                detections.append(best)
+                cluster = [r]
         if cluster:
-            detections.append(max(cluster, key=lambda c: c[2]))
+            best = max(cluster, key=lambda c: c[2])
+            detections.append(best)
+    
     detections.sort(key=lambda d: d[0])
+    
+    filtered_detections = []
+    i = 0
+    while i < len(detections):
+        current = detections[i]
+        j = i + 1
+        while j < len(detections) and detections[j][0] - current[0] < 180:
+            if detections[j][1] != current[1]:
+                if detections[j][2] > current[2]:
+                    current = detections[j]
+            j += 1
+        
+        filtered_detections.append(current)
+        i = j
+    
+    detections = sorted(filtered_detections, key=lambda d: d[0])
 
     left_points = sum(1 for d in detections if d[1] == 1)
     right_points = sum(1 for d in detections if d[1] == 2)
 
+
     hits = misses = 0
     matched_gt_frames = set()
+    
     for real_frame, pred_class, _conf in detections:
         gt_list = gt_left_frames if pred_class == 1 else gt_right_frames
         label_name = "Left" if pred_class == 1 else "Right"
-        match = next((f for f in gt_list
-                      if f not in matched_gt_frames and abs(f - real_frame) <= tolerance), None)
+        
+        match = None
+        for f in gt_list:
+            if f not in matched_gt_frames and -30 <= (f - real_frame) <= 150:
+                match = f
+                break
+        
         if match is not None:
             matched_gt_frames.add(match)
             hits += 1

@@ -9,8 +9,8 @@ from score_eval_utils import evaluate_model, load_gt_events
 
 TRAIN_GAME_IDS = ["1", "2", "4", "5"]
 EVAL_GAME_ID = "3"
-VAL_CHECK_EVERY = 5  # epochs
-MAX_CLASS_WEIGHT = 75.0
+VAL_CHECK_EVERY = 5
+MAX_CLASS_WEIGHT = 100.0
 EARLY_STOP_PATIENCE = 4 
 
 
@@ -19,13 +19,6 @@ def build_dataset(gid):
     event_json = f"data/OpenTT/annotations/train/game_{gid}.json"
     csv_path = f"runs/20260704-1040_baseline/game_{gid}_predictions.csv"
     return SequenceScoreDataset(cache_path, event_json, csv_path)
-
-
-def class_distribution(dataset):
-    counts = Counter()
-    for i in range(len(dataset)):
-        counts[dataset.label_only(i)] += 1
-    return counts
 
 
 def train():
@@ -50,10 +43,17 @@ def train():
     n0 = total_counts.get(0, 1)
     n1 = max(total_counts.get(1, 1), 1)
     n2 = max(total_counts.get(2, 1), 1)
-    w1 = min(n0 / n1, MAX_CLASS_WEIGHT)
-    w2 = min(n0 / n2, MAX_CLASS_WEIGHT)
-    class_weights = torch.tensor([1.0, w1 * 2.0, w2 * 2.0]).to(device)
+    
+    if n1 < n2:
+        w1 = min((n0 / n1) * 1.5, MAX_CLASS_WEIGHT)
+        w2 = min(n0 / n2, MAX_CLASS_WEIGHT)
+    else:
+        w1 = min(n0 / n1, MAX_CLASS_WEIGHT)
+        w2 = min((n0 / n2) * 1.5, MAX_CLASS_WEIGHT)
+    
+    class_weights = torch.tensor([1.0, w1, w2]).to(device)
     print(f"Computed class weights: [1.0, {w1:.1f}, {w2:.1f}]")
+    print(f"  (minority class boosted by 1.5x)")
 
     full_dataset = ConcatDataset(dataset_list)
     all_labels = [lbl for labels in per_dataset_labels for lbl in labels]
@@ -66,9 +66,8 @@ def train():
                         num_workers=2, pin_memory=(device == "cuda"))
 
     inferred_input_dim = dataset_list[0][0][0].shape[-1]
-    print(f"Inferred input_dim={inferred_input_dim} from dataset "
-          f"(feature_dim={dataset_list[0].feature_dim} + 3 coord dims)")
-    model = ScorePredictor(input_dim=inferred_input_dim).to(device)
+    print(f"Inferred input_dim={inferred_input_dim}")
+    model = ScorePredictor(input_dim=inferred_input_dim, bidirectional=True).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=1e-3)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=60)
     criterion = nn.CrossEntropyLoss(weight=class_weights)
@@ -79,8 +78,9 @@ def train():
     eval_dataset = SequenceScoreDataset(eval_cache, eval_events, eval_csv)
     gt_left, gt_right = load_gt_events(eval_events)
 
-    print("\nStarting training with feature fusion...")
+    print("\nStarting training...")
     best_f1 = -1.0
+    best_epoch = 0
     for epoch in range(60):
         model.train()
         total_loss = 0.0
@@ -102,15 +102,20 @@ def train():
             metrics = evaluate_model(model, eval_dataset, gt_left, gt_right, device, verbose=False)
             print(f"  val on game_{EVAL_GAME_ID}: recall={metrics['recall']*100:.1f}% "
                   f"precision={metrics['precision']*100:.1f}% f1={metrics['f1']:.3f} "
-                  f"predicted={metrics['left_points']}L/{metrics['right_points']}R")
+                  f"predicted={metrics['left_points']}L/{metrics['right_points']}R "
+                  f"(gt={len(gt_left)}L/{len(gt_right)}R)")
             if metrics["f1"] > best_f1:
                 best_f1 = metrics["f1"]
+                best_epoch = epoch + 1
                 torch.save(model.state_dict(), "score_predictor.pth")
                 print(f"  -> new best (f1={best_f1:.3f}), checkpoint saved")
+            elif epoch + 1 - best_epoch > 20:
+                print(f"  No improvement for 20 epochs, stopping early")
+                break
 
     if best_f1 < 0:
         torch.save(model.state_dict(), "score_predictor.pth")
-    print(f"\nBest validation F1: {best_f1:.3f}. Model saved as score_predictor.pth")
+    print(f"\nBest validation F1: {best_f1:.3f} at epoch {best_epoch}. Model saved as score_predictor.pth")
 
 
 if __name__ == "__main__":
