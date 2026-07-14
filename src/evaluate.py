@@ -77,21 +77,21 @@ def main() -> None:
         ds = load_dataset(game, args.cache_root)
         wh = ds.meta.get("orig_wh", ORIG_WH)
         pred = predict(model, ds, device)
-        errs = pixel_errors(pred, ds.ball.float(), wh)
+        errs = pixel_errors(pred, ds.ball[ds.idx].float(), wh)
         per_game[game] = summarize(errs, args.thresholds)
         all_errs.append(errs)
         csv_path = out_dir / f"{game}_predictions.csv"
-        write_predictions_csv(csv_path, ds.frames, pred, wh, errs)
+        write_predictions_csv(csv_path, ds.frames[ds.idx], pred, wh, errs)
         print(f"wrote {csv_path}")
 
     overall = summarize(torch.cat(all_errs), args.thresholds)
 
     train_games = ckpt["config"]["train_games"]
     baseline = None
-    train_ball = torch.cat([load_dataset(g, args.cache_root).ball.float()
-                            for g in train_games])
-    eval_ball = torch.cat([load_dataset(g, args.cache_root).ball.float()
-                           for g in args.games])
+    train_ball = torch.cat([(d := load_dataset(g, args.cache_root)).ball[d.idx].float()
+                        for g in train_games])
+    eval_ball  = torch.cat([(d := load_dataset(g, args.cache_root)).ball[d.idx].float()
+                        for g in args.games])
     baseline = mean_predictor_baseline(train_ball, eval_ball, thresholds=args.thresholds)
 
     header = ["game".ljust(12), "n".rjust(7), "mean_px".rjust(9),
