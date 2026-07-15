@@ -6,22 +6,18 @@ from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from pathlib import Path
 
-# device = "mps"
-
 if torch.cuda.is_available():
     device = "cuda"
 elif torch.backends.mps.is_available():
     device = "mps"
 else:
     device = "cpu"
-    
-DATA_ROOT = Path(__file__).resolve().parents[1] / "data"
 
+DATA_ROOT = Path(__file__).resolve().parents[1] / "data"
 D_AV_ROOT = DATA_ROOT / "OpenTT"
 
 with open(f"{DATA_ROOT}/OpenTT_Preprocess/video_bboxes.json", "r") as f:
-    SBOX =json.load(f)
-
+    SBOX = json.load(f)
 
 GAMES = [("train", f"game_{i}") for i in range(1, 6)] + \
         [("test",  f"test_{i}") for i in range(1, 8)]
@@ -29,32 +25,44 @@ GAMES = [("train", f"game_{i}") for i in range(1, 6)] + \
 MEAN = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
 STD  = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
 
-RES= 518
+RES = 384         
+CLIP_LEN = 16     
+TUBELET = 2       
 
-def frame2tokens(frames):
+def frame2tokens(clips):
     with torch.no_grad():
-        x = frames.to(device)
+        x = clips.to(device)
         x = (x - MEAN.to(device)) / STD.to(device)
-        out = model.forward_features(x)
-        return out["x_norm_patchtokens"]
+        x = x.permute(0, 2, 1, 3, 4)
+        out = model(x)
+        B, NT, D = out.shape
+        T = CLIP_LEN // TUBELET
+        out = out.reshape(B, T, NT // T, D)         
+        return out[:, (CLIP_LEN // 2) // TUBELET]
 
-def read_frame(frame_no,video_path):
+def read_clip(frame_no, video_path):
     cur = cv2.VideoCapture(video_path)
     frame_no = int(frame_no)
-    cur.set(cv2.CAP_PROP_POS_FRAMES, frame_no)
-    flag,frame = cur.read()
+    start = max(frame_no - CLIP_LEN // 2, 0)
+    cur.set(cv2.CAP_PROP_POS_FRAMES, start)
+    x1, y1, x2, y2 = SBOX[Path(video_path).stem]["scoreboard"]
+    out = []
+    for _ in range(CLIP_LEN):
+        flag, frame = cur.read()
+        if flag == False:
+            if len(out) == 0:
+                raise ValueError(f"couldn't read frame {frame_no} from {video_path}")
+            out.append(out[-1])              
+            continue
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame[y1:y2, x1:x2] = 0              
+        frame = cv2.resize(frame, (RES, RES))
+        frame = frame.astype("float32")
+        frame = frame / 255
+        frame = np.transpose(frame, axes=(2, 0, 1))
+        out.append(frame)
     cur.release()
-    if flag == False:
-        raise ValueError(f"couldn't read frame {frame_no} from {video_path}")
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    x1,y1,x2,y2 = SBOX[Path(video_path).stem]["scoreboard"]
-    frame[y1:y2, x1:x2] = 0
-    frame = cv2.resize(frame, (RES,RES))
-    frame = frame.astype("float32")
-    frame = frame / 255
-    frame = np.transpose(frame, axes=(2,0,1))
-    frame = torch.tensor(frame)    
-    return frame
+    return torch.tensor(np.stack(out))       
 
 
 class BallFrameDataset(Dataset):
@@ -87,14 +95,14 @@ class BallFrameDataset(Dataset):
         frame_no = selected[0]
         nx = selected[1]
         ny = selected[2]
-        frame = read_frame(frame_no,self.video_path)        
+        clip = read_clip(frame_no, self.video_path)       
         ball_co_ordinates = torch.tensor([nx,ny],dtype=torch.float32)
-        return frame, ball_co_ordinates, frame_no
+        return clip, ball_co_ordinates, frame_no
 
 
 if __name__ == "__main__":
 
-    model = torch.hub.load("facebookresearch/dinov2","dinov2_vits14")
+    model = torch.hub.load("facebookresearch/vjepa2", "vjepa2_1_vit_base_384")[0]
     model = model.eval()
     for param in model.parameters():
         param.requires_grad_(False)
@@ -102,7 +110,7 @@ if __name__ == "__main__":
 
     for split, game in GAMES:
         
-        cache_dir = Path(f"{DATA_ROOT}/dino_cache/{game}")
+        cache_dir = Path(f"{DATA_ROOT}/vjepa_cache/{game}")
         cache_dir.mkdir(parents=True, exist_ok=True)
         cache_path = cache_dir / "cache.pt"
         if cache_path.exists():
@@ -115,7 +123,7 @@ if __name__ == "__main__":
         M = len(d)
 
 
-        loader = DataLoader(d, batch_size=32, shuffle=False, num_workers=8)
+        loader = DataLoader(d, batch_size=4, shuffle=False, num_workers=8)
 
         tokens = ball = frames = None      
         write = 0
@@ -139,6 +147,7 @@ if __name__ == "__main__":
 
         meta = {"video": game, "split": split, "num_frames": M,
                 "token_shape": [N, D], "resolution": RES,
+                "clip_len": CLIP_LEN, "encoder": "vjepa2_1_vit_base_384",
                 "orig_wh": [d.width, d.height]}
         
         torch.save({"tokens": tokens, "ball": ball, "frames": frames, "meta": meta}, cache_path)

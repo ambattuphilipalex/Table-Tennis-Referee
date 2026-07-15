@@ -4,7 +4,7 @@ from timm.models.vision_transformer import Block
 
 
 class BallHead(nn.Module):
-    def __init__(self, in_dim=384, dim=384, depth=4, heads=6):
+    def __init__(self, in_dim=768, dim=384, depth=4, heads=6):
         super().__init__()
         self.proj = nn.Linear(in_dim, dim) if in_dim != dim else nn.Identity()
         self.cls = nn.Parameter(torch.zeros(1, 1, dim))
