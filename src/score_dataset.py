@@ -130,9 +130,15 @@ class SequenceScoreDataset(Dataset):
             xy = self.coords_dict.get(frame_no, [0.5, 0.0, 0.0])
             window_coords.append(xy)
 
-        label = self._label_for_window(window_indices)
-
         coords_tensor = torch.tensor(window_coords, dtype=torch.float32)
-        fused_features = torch.cat([real_features, coords_tensor], dim=-1)
+        x, y = coords_tensor[:, 0], coords_tensor[:, 1]
+        
+        is_left = (x < 0.4).float().unsqueeze(1)
+        is_right = (x > 0.6).float().unsqueeze(1)
+        
+        position_features = torch.cat([coords_tensor, is_left, is_right], dim=-1)  # 5 dims
+
+        label = self._label_for_window(window_indices)
+        fused_features = torch.cat([real_features, position_features], dim=-1)  # 389 dims
 
         return fused_features, torch.tensor(label, dtype=torch.long)
