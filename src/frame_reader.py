@@ -25,7 +25,7 @@ GAMES = [("train", f"game_{i}") for i in range(1, 6)] + \
 MEAN = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
 STD  = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
 
-RES = 384         
+RES = 512         
 CLIP_LEN = 16     
 TUBELET = 2       
 
@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
     for split, game in GAMES:
         
-        cache_dir = Path(f"{DATA_ROOT}/vjepa_cache/{game}")
+        cache_dir = Path(f"{DATA_ROOT}/vjepa_cache_512/{game}")
         cache_dir.mkdir(parents=True, exist_ok=True)
         cache_path = cache_dir / "cache.pt"
         if cache_path.exists():
@@ -123,7 +123,7 @@ if __name__ == "__main__":
         M = len(d)
 
 
-        loader = DataLoader(d, batch_size=4, shuffle=False, num_workers=8)
+        loader = DataLoader(d, batch_size=8, shuffle=False, num_workers=8)
 
         tokens = ball = frames = None      
         write = 0
