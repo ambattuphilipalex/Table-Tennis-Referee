@@ -18,6 +18,23 @@ def load_gt_events(event_json_path):
     return sorted(gt_left), sorted(gt_right)
 
 
+def check_scoreboard_change(dataset, event_frame, num_frames=150):
+    lost_ball_count = 0
+    
+    for offset in range(num_frames):
+        frame_no = event_frame + offset
+        coords = dataset.coords_dict.get(frame_no)
+        
+        if coords is None:
+            continue
+        
+        fresh = coords[2]
+        if fresh < 0.5:
+            lost_ball_count += 1
+    
+    return lost_ball_count >= 30
+
+
 @torch.no_grad()
 def evaluate_model(model, dataset, gt_left_frames, gt_right_frames, device,
                     tolerance=150, merge_window=90, verbose=True, min_confidence=0.0):
@@ -45,6 +62,19 @@ def evaluate_model(model, dataset, gt_left_frames, gt_right_frames, device,
 
         if pred_class != 0 and confidence >= min_confidence:
             raw.append((real_frame, pred_class, confidence))
+
+    verified_raw = []
+    for real_frame, pred_class, confidence in raw:
+        scoreboard_confirmed = check_scoreboard_change(dataset, real_frame, num_frames=150)
+        
+        if scoreboard_confirmed:
+            verified_raw.append((real_frame, pred_class, min(confidence + 0.15, 1.0)))
+            if verbose:
+                print(f"  [Scoreboard Verified] Frame {real_frame}: confidence boosted")
+        else:
+            verified_raw.append((real_frame, pred_class, max(confidence - 0.15, 0.0)))
+    
+    raw = verified_raw
 
     detections = []
     for cls in (1, 2):
