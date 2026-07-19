@@ -8,29 +8,6 @@ from torch.utils.data import Dataset
 class SequenceScoreDatasetRegression(Dataset):
     def __init__(self, cache_path, event_json_path, csv_path, seq_len=32,
         max_frame_gap=150, max_frames_ahead=90):
-        # cache_path = Path(cache_path)
-        # blob = torch.load(cache_path, mmap=True, weights_only=False)
-        # self.frames = blob["frames"]
-
-        # # RAW TOKENS instead of cls_token_features.pt
-        # if 'tokens' in blob:
-        #     print("  Using raw BallHead tokens from cache.pt")
-        #     self.feature_by_frame = {}
-        #     for i, f in enumerate(self.frames.tolist()):
-        #         if f != -1:
-        #             self.feature_by_frame[int(f)] = blob['tokens'][i].float().mean(dim=0)
-        #     self.feature_dim = 384
-        # else:
-        #     feat_path = cache_path.parent / "cls_token_features.pt"
-        #     if not feat_path.exists():
-        #         raise FileNotFoundError(f"Missing {feat_path}")
-        #     feat_blob = torch.load(feat_path, weights_only=False)
-        #     feature_frames = feat_blob["frames"].tolist()
-        #     self.feature_dim = feat_blob["features"].shape[-1]
-        #     self.feature_by_frame = {
-        #         int(f): feat_blob["features"][i] for i, f in enumerate(feature_frames)
-        #     }
-
         cache_path = Path(cache_path)
         blob = torch.load(cache_path, mmap=True, weights_only=False)
         self.frames = blob["frames"]
@@ -101,36 +78,48 @@ class SequenceScoreDatasetRegression(Dataset):
     def _build_valid_windows(self, max_frame_gap):
         starts = []
         n = len(self.valid_indices) - self.seq_len + 1
-        dropped = 0
+        dropped_gap = 0
+        dropped_far = 0
+        
         for start in range(max(0, n)):
             window = self.valid_indices[start:start + self.seq_len]
             frame_nos = [int(self.frames[i]) for i in window]
             gaps = [b - a for a, b in zip(frame_nos, frame_nos[1:])]
+            
             if gaps and max(gaps) > max_frame_gap:
-                dropped += 1
+                dropped_gap += 1
                 continue
+            
+            last_frame = frame_nos[-1]
+            near_event = False
+            for ef in self.all_event_frames:
+                if -60 <= (ef - last_frame) <= self.max_frames_ahead:
+                    near_event = True
+                    break
+            
+            if not near_event:
+                dropped_far += 1
+                continue
+            
             starts.append(start)
+        
         if n > 0:
             print(f"  window filter: kept {len(starts)}/{n} windows "
-                  f"(dropped {dropped} that spanned a >{max_frame_gap}-frame gap)")
+                f"(dropped {dropped_gap} gap, {dropped_far} far from event)")
         return starts
 
     def __len__(self):
         return len(self.window_starts)
 
     def _get_target(self, window_indices):
-        """Returns: (frames_until_event, event_type) or (max_frames_ahead, 0) if no event"""
         last_window_frame = int(self.frames[window_indices[-1]])
-        
         for event_frame in self.all_event_frames:
             diff = event_frame - last_window_frame
             if 0 <= diff <= self.max_frames_ahead:
                 if event_frame in self.left_event_frames:
-                    return diff, 1  # Left event
+                    return diff, 1
                 else:
-                    return diff, 2  # Right event
-        
-        # No event in range
+                    return diff, 2
         return self.max_frames_ahead, 0
 
     def __getitem__(self, idx):
@@ -152,5 +141,4 @@ class SequenceScoreDatasetRegression(Dataset):
 
         frames_until, event_type = self._get_target(window_indices)
         target = torch.tensor([float(frames_until) / self.max_frames_ahead, float(event_type)], dtype=torch.float32)
-
         return fused_features, target

@@ -31,15 +31,13 @@ def train():
 
     full_dataset = ConcatDataset(dataset_list)
     
-    # Count event types for class weights
     type_counts = Counter()
     for i in range(len(full_dataset)):
         _, target = full_dataset[i]
         type_counts[int(target[1].item())] += 1
     
     print(f"Event type distribution: {dict(type_counts)}")
-    
-    # Compute class weights (0=background, 1=Left, 2=Right)
+
     total = sum(type_counts.values())
     w0 = total / (3 * type_counts.get(0, 1))
     w1 = total / (3 * type_counts.get(1, 1))
@@ -47,7 +45,7 @@ def train():
     class_weights = torch.tensor([w0, w1, w2]).to(device)
     print(f"Class weights: [BG={w0:.1f}, Left={w1:.1f}, Right={w2:.1f}]")
     
-    loader = DataLoader(full_dataset, batch_size=32, shuffle=True,
+    loader = DataLoader(full_dataset, batch_size=16, shuffle=True,
                         num_workers=2, pin_memory=(device == "cuda"))
 
     sample_features, _ = full_dataset[0]
@@ -55,11 +53,11 @@ def train():
     print(f"Input dim: {input_dim}")
     
     model = ScorePredictorRegression(input_dim=input_dim).to(device)
-    optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)  # Added weight decay
+    optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-3) 
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=60)
     
     mse_loss = nn.MSELoss()
-    ce_loss = nn.CrossEntropyLoss(weight=class_weights)  # Added class weights
+    ce_loss = nn.CrossEntropyLoss(weight=class_weights) 
 
     print("\nStarting regression training...")
     best_val_loss = float('inf')
@@ -98,7 +96,7 @@ def train():
             model.eval()
             val_loss = 0.0
             eval_ds = build_dataset(EVAL_GAME_ID)
-            eval_loader = DataLoader(eval_ds, batch_size=32, shuffle=False,
+            eval_loader = DataLoader(eval_ds, batch_size=16, shuffle=False,
                                      num_workers=2, pin_memory=(device == "cuda"))
             with torch.no_grad():
                 for tokens, targets in eval_loader:

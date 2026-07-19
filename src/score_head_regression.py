@@ -3,7 +3,7 @@ import torch.nn as nn
 
 
 class ScorePredictorRegression(nn.Module):
-    def __init__(self, input_dim=387, hidden_dim=128, num_layers=2, dropout=0.3):
+    def __init__(self, input_dim=387, hidden_dim=128, num_layers=2, dropout=0.5):
         super().__init__()
         gru_dropout = dropout if num_layers > 1 else 0.0
         self.gru = nn.GRU(
