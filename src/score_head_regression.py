@@ -2,36 +2,64 @@ import torch
 import torch.nn as nn
 
 
-class ScorePredictorRegression(nn.Module):
-    def __init__(self, input_dim=387, hidden_dim=128, num_layers=2, dropout=0.5):
+class ScorePredictorSequential(nn.Module):
+    def __init__(self, feature_dim=387, hidden_dim=128, dropout=0.3):
         super().__init__()
-        gru_dropout = dropout if num_layers > 1 else 0.0
-        self.gru = nn.GRU(
-            input_dim, hidden_dim, num_layers,
-            batch_first=True, dropout=gru_dropout, bidirectional=False,
-        )
+        self.hidden_dim = hidden_dim
+        # input = per-frame features + running score(2) + previous-step event probs(3)
+        input_dim = feature_dim + 2 + 3
+        self.cell = nn.GRUCell(input_dim, hidden_dim)
         self.norm = nn.LayerNorm(hidden_dim)
-        self.head_dropout = nn.Dropout(dropout)
-        
-        # Two outputs: frames_until_event (regression), event_type (classification)
-        self.fc_frames = nn.Linear(hidden_dim, 1)      # Regression: how many frames?
-        self.fc_type = nn.Linear(hidden_dim, 3)         # Classification: 0=no event, 1=Left, 2=Right
+        self.dropout = nn.Dropout(dropout)
+        self.fc_frames = nn.Linear(hidden_dim, 1)
+        self.fc_type = nn.Linear(hidden_dim, 3)  # 0=none, 1=left, 2=right
 
-    def forward(self, x):
-        out, _ = self.gru(x)
-        last = out[:, -1, :]
-        last = self.head_dropout(self.norm(last))
-        
-        frames_until = torch.sigmoid(self.fc_frames(last))
-        event_logits = self.fc_type(last)
-        
-        return frames_until, event_logits
+    def init_hidden(self, batch_size, device):
+        return torch.zeros(batch_size, self.hidden_dim, device=device)
+
+    def forward(self, features, score_state, hidden=None, teacher_event_type=None):
+        B, L, _ = features.shape
+        device = features.device
+        if hidden is None:
+            hidden = self.init_hidden(B, device)
+
+        prev_probs = torch.zeros(B, 3, device=device)
+        prev_probs[:, 0] = 1.0
+
+        score = score_state.clone()
+
+        frames_out, type_out = [], []
+        for t in range(L):
+            x_t = torch.cat([features[:, t], score, prev_probs], dim=-1)
+            hidden = self.cell(x_t, hidden)
+            h = self.dropout(self.norm(hidden))
+
+            frames_t = torch.sigmoid(self.fc_frames(h))   # [B, 1]
+            type_t = self.fc_type(h)                       # [B, 3]
+            frames_out.append(frames_t)
+            type_out.append(type_t)
+
+            if teacher_event_type is not None:
+                cls_t = teacher_event_type[:, t]              # teacher forcing
+            else:
+                cls_t = torch.argmax(type_t, dim=-1)           # model's own prediction
+
+            prev_probs = torch.softmax(type_t.detach(), dim=-1)
+            left_inc = (cls_t == 1).float()
+            right_inc = (cls_t == 2).float()
+            score = torch.stack([score[:, 0] + left_inc, score[:, 1] + right_inc], dim=-1)
+
+        frames_out = torch.stack(frames_out, dim=1)  # [B, L, 1]
+        type_out = torch.stack(type_out, dim=1)       # [B, L, 3]
+        return frames_out, type_out, hidden.detach(), score.detach()
 
 
 if __name__ == "__main__":
-    model = ScorePredictorRegression()
-    fake = torch.randn(16, 64, 387)
-    frames, types = model(fake)
-    print(f"Input shape: {fake.shape}")
-    print(f"Frames until event: {frames.shape}")
-    print(f"Event type logits: {types.shape}")
+    model = ScorePredictorSequential(feature_dim=387)
+    fake_feats = torch.randn(2, 10, 387)
+    fake_score = torch.tensor([[3.0, 5.0], [0.0, 0.0]]) 
+    frames_pred, type_logits, hidden, score_out = model(fake_feats, fake_score)
+    print("frames_pred:", frames_pred.shape)   # [2, 10, 1]
+    print("type_logits:", type_logits.shape)    # [2, 10, 3]
+    print("hidden:", hidden.shape)               # [2, 128]
+    print("score after chunk:", score_out)
