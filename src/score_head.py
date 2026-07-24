@@ -2,29 +2,55 @@ import torch
 import torch.nn as nn
 
 
-class ScorePredictor(nn.Module):
-    def __init__(self, input_dim=387, hidden_dim=128, num_layers=2, num_classes=3,
-                 bidirectional=False, dropout=0.3):
+class ScorePredictorClsSequential(nn.Module):
+    def __init__(self, feature_dim=389, hidden_dim=128, dropout=0.3):
         super().__init__()
-        gru_dropout = dropout if num_layers > 1 else 0.0
-        self.gru = nn.GRU(
-            input_dim, hidden_dim, num_layers,
-            batch_first=True, dropout=gru_dropout, bidirectional=bidirectional,
-        )
-        out_dim = hidden_dim * (2 if bidirectional else 1)
-        self.norm = nn.LayerNorm(out_dim)
-        self.head_dropout = nn.Dropout(dropout)
-        self.fc = nn.Linear(out_dim, num_classes)
+        self.hidden_dim = hidden_dim
+        input_dim = feature_dim + 2 + 3  # + score_state(2) + prev-step event probs(3)
+        self.cell = nn.GRUCell(input_dim, hidden_dim)
+        self.norm = nn.LayerNorm(hidden_dim)
+        self.dropout = nn.Dropout(dropout)
+        self.fc = nn.Linear(hidden_dim, 3)  # 0=none, 1=left, 2=right
 
-    def forward(self, x):
-        out, _ = self.gru(x)
-        last = out[:, -1, :]
-        logits = self.fc(self.head_dropout(self.norm(last)))
-        return logits
+    def init_hidden(self, batch_size, device):
+        return torch.zeros(batch_size, self.hidden_dim, device=device)
+
+    def forward(self, features, score_state, hidden=None):
+        B, L, _ = features.shape
+        device = features.device
+        if hidden is None:
+            hidden = self.init_hidden(B, device)
+
+        prev_probs = torch.zeros(B, 3, device=device)
+        prev_probs[:, 0] = 1.0 
+
+        score = score_state.clone()
+        type_out = []
+
+        for t in range(L):
+            x_t = torch.cat([features[:, t], score, prev_probs], dim=-1)
+            hidden = self.cell(x_t, hidden)
+            h = self.dropout(self.norm(hidden))
+
+            type_t = self.fc(h)  # [B, 3]
+            type_out.append(type_t)
+
+            cls_t = torch.argmax(type_t, dim=-1)
+            prev_probs = torch.softmax(type_t.detach(), dim=-1)
+
+            left_inc = (cls_t == 1).float()
+            right_inc = (cls_t == 2).float()
+            score = torch.stack([score[:, 0] + left_inc, score[:, 1] + right_inc], dim=-1)
+
+        type_out = torch.stack(type_out, dim=1)  # [B, L, 3]
+        return type_out, hidden.detach(), score.detach()
+
 
 if __name__ == "__main__":
-    model = ScorePredictor()
-    fake_fused_tokens = torch.randn(16, 64, 387)
-    predictions = model(fake_fused_tokens)
-    print(f"Input shape: {fake_fused_tokens.shape}")
-    print(f"Fused output shape: {predictions.shape}")
+    model = ScorePredictorClsSequential(feature_dim=389)
+    fake_feats = torch.randn(2, 10, 389)
+    fake_score = torch.tensor([[3.0, 5.0], [0.0, 0.0]])
+    type_logits, hidden, score_out = model(fake_feats, fake_score)
+    print("type_logits:", type_logits.shape)  # [2, 10, 3]
+    print("hidden:", hidden.shape)              # [2, 128]
+    print("score after chunk:", score_out)

@@ -1,40 +1,37 @@
 import json
-import bisect
 import csv
 from pathlib import Path
+
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 
 
-class SequenceScoreDataset(Dataset):
-    def __init__(self, cache_path, event_json_path, csv_path, seq_len=64,
-            event_match_tolerance=30, max_frame_gap=150):
+class SequentialClsDataset(Dataset):
+    def __init__(self, cache_path, event_json_path, csv_path,
+                 chunk_len=256, max_frame_gap=150, max_frames_ahead=30,
+                 left_zone_x=0.4, right_zone_x=0.6):
         cache_path = Path(cache_path)
         blob = torch.load(cache_path, mmap=True, weights_only=False)
-        self.frames = blob["frames"]
+        self.frames_raw = blob["frames"]
 
         feat_path = cache_path.parent / "cls_token_features.pt"
         if not feat_path.exists():
-            raise FileNotFoundError(
-                f"Missing {feat_path}. Run extract_features.py first."
-            )
+            raise FileNotFoundError(f"Missing {feat_path}. Run extract_features.py first.")
         feat_blob = torch.load(feat_path, weights_only=False)
         feature_frames = feat_blob["frames"].tolist()
-        self.feature_dim = feat_blob["features"].shape[-1]
+        self.cls_feature_dim = feat_blob["features"].shape[-1]
+        self.feature_dim = self.cls_feature_dim + 5              # + (x, y, fresh, is_left, is_right)
         self.feature_by_frame = {
             int(f): feat_blob["features"][i] for i, f in enumerate(feature_frames)
         }
 
-        with open(event_json_path, 'r') as f:
+        with open(event_json_path, "r") as f:
             self.events = json.load(f)
 
-        self.seq_len = seq_len
-        self.event_match_tolerance = event_match_tolerance
-
-        self.valid_indices = [
-            i for i, f in enumerate(self.frames.tolist())
-            if f != -1 and int(f) in self.feature_by_frame
-        ]
+        self.chunk_len = chunk_len
+        self.max_frames_ahead = max_frames_ahead
+        self.left_zone_x = left_zone_x
+        self.right_zone_x = right_zone_x
 
         self.left_scores = ["left_winner", "right_out", "right_net", "right_miss", "right_not_hitting"]
         self.right_scores = ["right_winner", "left_out", "left_net", "left_miss", "left_not_hitting"]
@@ -45,33 +42,56 @@ class SequenceScoreDataset(Dataset):
         self.right_event_frames = sorted(
             int(fno) for fno, ev in self.events.items() if any(s in ev for s in self.right_scores)
         )
+        self.all_events = sorted(
+            [(f, 1) for f in self.left_event_frames] + [(f, 2) for f in self.right_event_frames]
+        )
 
-        print(f"Game events - Left: {len(self.left_event_frames)}, Right: {len(self.right_event_frames)}")
-        
         self.coords_dict = self._load_coordinates(csv_path)
-        self.window_starts = self._build_valid_windows(max_frame_gap)
+
+        valid_frame_nos = sorted(
+            int(f) for f in self.frames_raw.tolist() if int(f) != -1 and int(f) in self.feature_by_frame
+        )
+
+        runs = []
+        if valid_frame_nos:
+            cur_run = [valid_frame_nos[0]]
+            for prev_f, f in zip(valid_frame_nos, valid_frame_nos[1:]):
+                if f - prev_f > max_frame_gap:
+                    runs.append(cur_run)
+                    cur_run = [f]
+                else:
+                    cur_run.append(f)
+            runs.append(cur_run)
+
+        self.chunks = []  # (frame_list, is_run_start)
+        for run in runs:
+            n_chunks = (len(run) + chunk_len - 1) // chunk_len
+            for c in range(n_chunks):
+                seg = run[c * chunk_len:(c + 1) * chunk_len]
+                if len(seg) < 2:
+                    continue
+                self.chunks.append((seg, c == 0))
+
+        print(f"  built {len(self.chunks)} ordered chunks from {len(runs)} contiguous run(s) "
+              f"({len(valid_frame_nos)} usable frames)")
 
     def _load_coordinates(self, csv_path):
         coords = {}
-        last_valid_x = 0.5
-        last_valid_y = 0.0
-
+        last_valid_x, last_valid_y = 0.5, 0.0
         try:
-            with open(csv_path, mode='r') as f:
+            with open(csv_path, mode="r") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     try:
-                        f_num = int(float(row['frame']))
-                        x = float(row.get('x_norm', -1))
-                        y = float(row.get('y_norm', -1))
-                        
+                        f_num = int(float(row["frame"]))
+                        x = float(row.get("x_norm", -1))
+                        y = float(row.get("y_norm", -1))
                         if 0.0 <= x <= 1.0 and 0.0 <= y <= 1.0:
                             last_valid_x, last_valid_y = x, y
                             fresh = 1.0
                         else:
                             x, y = last_valid_x, last_valid_y
                             fresh = 0.0
-                        
                         coords[f_num] = [x, y, fresh]
                     except (ValueError, KeyError):
                         coords[f_num] = [last_valid_x, last_valid_y, 0.0]
@@ -79,66 +99,45 @@ class SequenceScoreDataset(Dataset):
             print(f"Warning: Tracking CSV read error ({e}).")
         return coords
 
-    def _build_valid_windows(self, max_frame_gap):
-        starts = []
-        n = len(self.valid_indices) - self.seq_len + 1
-        dropped = 0
-        for start in range(max(0, n)):
-            window = self.valid_indices[start:start + self.seq_len]
-            frame_nos = [int(self.frames[i]) for i in window]
-            gaps = [b - a for a, b in zip(frame_nos, frame_nos[1:])]
-            if gaps and max(gaps) > max_frame_gap:
-                dropped += 1
-                continue
-            starts.append(start)
-        if n > 0:
-            print(f"  window filter: kept {len(starts)}/{n} windows "
-                  f"(dropped {dropped} that spanned a >{max_frame_gap}-frame gap)")
-        return starts
+    def _score_before(self, frame_no):
+        left = sum(1 for f in self.left_event_frames if f < frame_no)
+        right = sum(1 for f in self.right_event_frames if f < frame_no)
+        return left, right
 
-    def __len__(self):
-        return len(self.window_starts)
-
-    def _label_for_window(self, window_indices):
-        last_window_frame = int(self.frames[window_indices[-1]])
-        
-        for event_frame in self.left_event_frames:
-            if 0 <= (event_frame - last_window_frame) <= 30:
-                return 1
-        for event_frame in self.right_event_frames:
-            if 0 <= (event_frame - last_window_frame) <= 30:
-                return 2
-        
+    def _label_at(self, frame_no):
+        for ef, cls in self.all_events:
+            diff = ef - frame_no
+            if 0 <= diff <= self.max_frames_ahead:
+                return cls
+            if diff > self.max_frames_ahead:
+                break 
         return 0
 
-    def label_only(self, idx):
-        start = self.window_starts[idx]
-        window_indices = self.valid_indices[start: start + self.seq_len]
-        return self._label_for_window(window_indices)
+    def __len__(self):
+        return len(self.chunks)
 
     def __getitem__(self, idx):
-        start = self.window_starts[idx]
-        window_indices = self.valid_indices[start: start + self.seq_len]
+        seg, is_run_start = self.chunks[idx]
 
-        real_features = torch.stack([
-            self.feature_by_frame[int(self.frames[i])] for i in window_indices
-        ]).float()
+        feats = torch.stack([self.feature_by_frame[f] for f in seg]).float()
 
-        window_coords = []
-        for index in window_indices:
-            frame_no = int(self.frames[index])
-            xy = self.coords_dict.get(frame_no, [0.5, 0.0, 0.0])
-            window_coords.append(xy)
+        coords_rows = []
+        for f in seg:
+            x, y, fresh = self.coords_dict.get(f, [0.5, 0.0, 0.0])
+            is_left = 1.0 if x < self.left_zone_x else 0.0
+            is_right = 1.0 if x > self.right_zone_x else 0.0
+            coords_rows.append([x, y, fresh, is_left, is_right])
+        position_features = torch.tensor(coords_rows, dtype=torch.float32)  # [L, 5]
 
-        coords_tensor = torch.tensor(window_coords, dtype=torch.float32)
-        x, y = coords_tensor[:, 0], coords_tensor[:, 1]
-        
-        is_left = (x < 0.4).float().unsqueeze(1)
-        is_right = (x > 0.6).float().unsqueeze(1)
-        
-        position_features = torch.cat([coords_tensor, is_left, is_right], dim=-1)  # 5 dims
+        fused = torch.cat([feats, position_features], dim=-1)  # [L, feature_dim]
 
-        label = self._label_for_window(window_indices)
-        fused_features = torch.cat([real_features, position_features], dim=-1)  # 389 dims
+        event_type = torch.tensor([self._label_at(f) for f in seg], dtype=torch.long)
+        left0, right0 = self._score_before(seg[0])
 
-        return fused_features, torch.tensor(label, dtype=torch.long)
+        return {
+            "features": fused,
+            "event_type": event_type,
+            "score_state": torch.tensor([left0, right0], dtype=torch.float32),
+            "is_run_start": torch.tensor(is_run_start),
+            "frame_numbers": torch.tensor(seg, dtype=torch.int64),
+        }

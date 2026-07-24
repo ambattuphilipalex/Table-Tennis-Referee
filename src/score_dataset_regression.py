@@ -8,7 +8,7 @@ from torch.utils.data import Dataset
 
 class SequentialScoreDataset(Dataset):
     def __init__(self, cache_path, event_json_path, csv_path,
-                 chunk_len=256, max_frame_gap=150, max_frames_ahead=90):
+                 chunk_len=256, max_frame_gap=150, max_frames_ahead=30):
         cache_path = Path(cache_path)
         blob = torch.load(cache_path, mmap=True, weights_only=False)
         self.frames_raw = blob["frames"]

@@ -99,7 +99,9 @@ def train():
     mse_loss = nn.MSELoss()
 
     print("\nStarting sequential (TBPTT) training...")
-    best_val_loss = float("inf")
+    best_macro_f1 = 0.0
+    patience = 10
+    no_improve = 0
 
     for epoch in range(60):
         train_loss = run_epoch(model, train_datasets, optimizer, ce_loss, mse_loss, device, train=True)
@@ -116,14 +118,25 @@ def train():
             # confusion matrix + per-class precision/recall/F1
             _, _, macro_f1 = run_autoregressive_eval(model, eval_datasets, device, verbose=True)
 
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
+            # if val_loss < best_val_loss:
+            #     best_val_loss = val_loss
+            #     torch.save(model.state_dict(), "score_predictor_sequential.pth")
+            #     print("  -> new best, saved")
+
+            if macro_f1 > best_macro_f1:
+                best_macro_f1 = macro_f1
+                no_improve = 0
                 torch.save(model.state_dict(), "score_predictor_sequential.pth")
-                print("  -> new best, saved")
+                print(f"  -> new best (macro F1={macro_f1:.3f}), saved")
+            else:
+                no_improve += 1
+                if no_improve >= patience:
+                    print(f"  Early stopping at epoch {epoch+1}")
+                    break
         else:
             print(f"Epoch [{epoch+1}] | Train Loss: {train_loss:.4f}")
 
-    print(f"\nBest val loss: {best_val_loss:.4f}")
+    print(f"\nBest macro F1: {best_macro_f1:.3f}")
 
 
 if __name__ == "__main__":
