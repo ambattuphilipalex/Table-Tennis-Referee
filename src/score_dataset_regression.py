@@ -40,7 +40,7 @@ class SequentialScoreDataset(Dataset):
         self.right_event_frames = sorted(
             int(fno) for fno, ev in self.events.items() if any(s in ev for s in self.right_scores)
         )
-        # (frame, class) pairs, sorted by frame, used for per-frame lookahead labeling
+        # (frame, class) pairs, sorted by frame
         self.all_events = sorted(
             [(f, 1) for f in self.left_event_frames] + [(f, 2) for f in self.right_event_frames]
         )

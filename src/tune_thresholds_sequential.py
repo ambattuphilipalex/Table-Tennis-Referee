@@ -1,17 +1,3 @@
-"""
-Cheap threshold/clustering tuning for the sequential model -- no retraining.
-
-Your predict script currently hardcodes confidence_threshold=0.70 and cluster
-windows of 120/300 frames. Given 2104 raw per-frame firings collapsing into
-40 detections with only 35% precision, those defaults are very likely NOT the
-best operating point for this model. This script runs the model forward
-through the whole eval game exactly ONCE (autoregressive, chunks in order,
-same as your predict script), caches every frame's (class, confidence,
-frames_until), and then cheaply re-clusters/re-thresholds many times on that
-cached data to find a better precision/recall/F1 trade-off.
-
-Usage: edit MODEL_PATH / paths in main() and run.
-"""
 import torch
 from torch.utils.data import DataLoader
 
@@ -20,13 +6,11 @@ from score_dataset_regression import SequentialScoreDataset
 from score_eval_utils import load_gt_events
 
 THRESHOLDS = [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95]
-CLUSTER_WINDOWS = [60, 90, 120, 180]  # frames -- try tighter windows too
+CLUSTER_WINDOWS = [60, 90, 120, 180]
 
 
 @torch.no_grad()
 def collect_raw_predictions(model, dataset, device):
-    """Runs the model once and returns EVERY frame's (frame_no, cls, conf, frames_until),
-    regardless of threshold -- filtering happens later, cheaply, on this cache."""
     loader = DataLoader(dataset, batch_size=1, shuffle=False)
     hidden, score = None, None
     rows = []

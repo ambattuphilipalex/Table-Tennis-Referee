@@ -1,6 +1,3 @@
-"""
-TBPTT training loop for the sequential model.
-"""
 import torch
 import torch.nn as nn
 import torch.optim as optim
