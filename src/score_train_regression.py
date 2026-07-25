@@ -22,7 +22,7 @@ def build_dataset(gid):
     event_json = f"data/OpenTT/annotations/train/game_{gid}.json"
     csv_path = f"runs/20260704-1040_baseline/game_{gid}_predictions.csv"
     print(f"Loading game_{gid} ...")
-    return SequentialScoreDataset(cache_path, event_json, csv_path, chunk_len=CHUNK_LEN)
+    return SequentialScoreDataset(cache_path, event_json, csv_path, chunk_len=CHUNK_LEN,  rally_window=200, far_background_weight=0.2)
 
 
 def run_epoch(model, datasets, optimizer, ce_loss, mse_loss, device, train):
@@ -47,7 +47,10 @@ def run_epoch(model, datasets, optimizer, ce_loss, mse_loss, device, train):
                     feats, score_in, hidden=hidden, teacher_event_type=None,
                 )
 
-                loss_type = ce_loss(type_logits.reshape(-1, 3), event_type.reshape(-1))
+                frame_weight = batch["frame_weight"].to(device)
+                per_frame_loss = ce_loss(type_logits.reshape(-1, 3), event_type.reshape(-1))
+                fw = frame_weight.reshape(-1)
+                loss_type = (per_frame_loss * fw).sum() / fw.sum().clamp(min=1e-8)
                 pos_mask = event_type.reshape(-1) != 0
                 if pos_mask.any():
                     loss_frames = mse_loss(
@@ -95,7 +98,7 @@ def train():
     model = ScorePredictorSequential(feature_dim=feature_dim).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-3)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=60)
-    ce_loss = nn.CrossEntropyLoss(weight=class_weights)
+    ce_loss = nn.CrossEntropyLoss(weight=class_weights,  reduction="none")
     mse_loss = nn.MSELoss()
 
     print("\nStarting sequential (TBPTT) training...")

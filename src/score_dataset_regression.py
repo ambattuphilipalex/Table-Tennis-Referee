@@ -8,10 +8,12 @@ from torch.utils.data import Dataset
 
 class SequentialScoreDataset(Dataset):
     def __init__(self, cache_path, event_json_path, csv_path,
-                 chunk_len=256, max_frame_gap=150, max_frames_ahead=30):
+                 chunk_len=256, max_frame_gap=150, max_frames_ahead=30, rally_window=200, far_background_weight=0.2):
         cache_path = Path(cache_path)
         blob = torch.load(cache_path, mmap=True, weights_only=False)
         self.frames_raw = blob["frames"]
+        self.rally_window = rally_window
+        self.far_background_weight = far_background_weight
 
         feat_path = cache_path.parent / "cls_token_features.pt"
         if not feat_path.exists():
@@ -120,6 +122,11 @@ class SequentialScoreDataset(Dataset):
     def __len__(self):
         return len(self.chunks)
 
+    def _distance_to_nearest_event(self, frame_no):
+        if not self.all_events:
+            return float("inf")
+        return min(abs(ef - frame_no) for ef, _ in self.all_events)
+
     def __getitem__(self, idx):
         seg, is_run_start = self.chunks[idx]
 
@@ -136,6 +143,11 @@ class SequentialScoreDataset(Dataset):
             event_type[i] = cls
             frames_until[i] = float(diff) / self.max_frames_ahead
 
+        frame_weight = torch.zeros(len(seg))
+        for i, f in enumerate(seg):
+            dist = self._distance_to_nearest_event(f)
+            frame_weight[i] = 1.0 if dist <= self.rally_window else self.far_background_weight
+
         left0, right0 = self._score_before(seg[0])
 
         return {
@@ -145,4 +157,5 @@ class SequentialScoreDataset(Dataset):
             "score_state": torch.tensor([left0, right0], dtype=torch.float32),  # [2], ground truth, not 0-0
             "is_run_start": torch.tensor(is_run_start),
             "frame_numbers": torch.tensor(seg, dtype=torch.int64),
+            "frame_weight": frame_weight,
         }
