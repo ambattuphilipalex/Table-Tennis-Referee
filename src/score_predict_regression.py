@@ -3,7 +3,10 @@ from torch.utils.data import DataLoader
 
 from score_head_regression import ScorePredictorSequential
 from score_dataset_regression import SequentialScoreDataset
-from score_eval_utils import load_gt_events
+from score_eval_utils import load_gt_events, verify_visual_score_change
+
+import json
+import cv2
 
 
 def predict_regression(cache_path, event_json, csv_path,
@@ -55,7 +58,7 @@ def predict_regression(cache_path, event_json, csv_path,
                         "confidence": conf,
                     })
 
-    print(f"Raw predictions (filtered): {len(raw_predictions)}")
+    print(f"Raw predictions (unfiltered): {len(raw_predictions)}")
     raw_predictions.sort(key=lambda x: x["predicted_frame"])
 
     detections = []
@@ -87,6 +90,38 @@ def predict_regression(cache_path, event_json, csv_path,
         filtered.append(current)
         i = j
     detections = sorted(filtered, key=lambda x: x["predicted_frame"])
+
+    print(f"\nClustered events to verify: {len(detections)}")
+    with open("data/OpenTT_Preprocess/video_bboxes.json", "r") as f:
+        all_bboxes = json.load(f)
+    game_bboxes = all_bboxes["game_3"]
+
+    video_path = "data/OpenTT/videos/train/game_3.mp4"
+    cap = cv2.VideoCapture(video_path)
+
+    verified_detections = []
+    for idx, d in enumerate(detections):
+        
+        confirmed = verify_visual_score_change(
+            cap, 
+            d["predicted_frame"], 
+            d["event_type"], 
+            game_bboxes, 
+            max_frames_ahead=240
+        )
+        
+        if confirmed:
+            d["confidence"] = min(d["confidence"] + 0.15, 1.0)
+            print(f"  [{idx+1}/{len(detections)}] VERIFIED: Point detected at frame {d['predicted_frame']}")
+        else:
+            d["confidence"] = max(d["confidence"] - 0.40, 0.0)
+            print(f"  [{idx+1}/{len(detections)}] FAILED: Graphic didn't change at {d['predicted_frame']} (penalizing)")
+            
+        if d["confidence"] >= confidence_threshold:
+            verified_detections.append(d)
+            
+    cap.release()
+    detections = verified_detections
 
     left_count = sum(1 for d in detections if d["event_type"] == 1)
     right_count = sum(1 for d in detections if d["event_type"] == 2)

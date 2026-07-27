@@ -109,7 +109,7 @@ def main():
 
     gt_left, gt_right = load_gt_events(event_json)
     dataset = SequentialScoreDataset(cache_path, event_json, csv_path)
-    feature_dim = dataset.feature_dim + 3
+    feature_dim = dataset.feature_dim + 5
 
     model = ScorePredictorSequential(feature_dim=feature_dim).to(device)
     model.load_state_dict(torch.load(model_path, map_location=device))

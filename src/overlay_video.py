@@ -2,14 +2,16 @@ import torch
 from torch.utils.data import DataLoader
 import cv2
 import sys
+import json
+import csv
 sys.path.append('src')
 
 from score_head_regression import ScorePredictorSequential
 from score_dataset_regression import SequentialScoreDataset
-from score_eval_utils import load_gt_events
+from score_eval_utils import load_gt_events, verify_visual_score_change
 
-VIDEO_PATH = "/home/shared/Table-Tennis-Referee/data/OpenTT/videos/train/game_3.mp4"
-OUTPUT_PATH = "annotated_output.mp4"
+VIDEO_PATH = "data/OpenTT/videos/train/game_3.mp4"
+OUTPUT_PATH = "annotated_game_3.mp4"
 MODEL_PATH = "score_predictor_sequential.pth"
 CACHE_PATH = "data/dino_cache/game_3/cache.pt"
 EVENT_JSON = "data/OpenTT/annotations/train/game_3.json"
@@ -97,14 +99,57 @@ while i < len(detections):
 
 detections = sorted(filtered, key=lambda x: x["predicted_frame"])
 
+print(f"\nVerifying {len(detections)} clustered events against physical scoreboard...")
+with open("data/OpenTT_Preprocess/video_bboxes.json", "r") as f:
+    all_bboxes = json.load(f)
+game_bboxes = all_bboxes["game_3"]
+
+cap_verify = cv2.VideoCapture(VIDEO_PATH)
+verified_detections = []
+
+for idx, d in enumerate(detections):
+    confirmed = verify_visual_score_change(
+        cap_verify, 
+        d["predicted_frame"], 
+        d["event_type"], 
+        game_bboxes, 
+        max_frames_ahead=240
+    )
+    
+    if confirmed:
+        d["confidence"] = min(d["confidence"] + 0.15, 1.0)
+    else:
+        d["confidence"] = max(d["confidence"] - 0.40, 0.0)
+        
+    if d["confidence"] >= CONFIDENCE_THRESHOLD:
+        verified_detections.append(d)
+        
+cap_verify.release()
+detections = verified_detections
+
 DETECTIONS = [
     (d["predicted_frame"], "LEFT" if d["event_type"] == 1 else "RIGHT", d["confidence"])
     for d in detections
 ]
 
-print(f"Found {len(DETECTIONS)} events:")
+print(f"Found {len(DETECTIONS)} VERIFIED events:")
 for d in DETECTIONS:
     print(f"  {d[1]} at frame {d[0]} (conf={d[2]:.3f})")
+
+
+print("\nLoading ball tracking coordinates...")
+ball_coords = {}
+with open(CSV_PATH, "r") as f:
+    reader = csv.DictReader(f)
+    for row in reader:
+        try:
+            f_num = int(float(row["frame"]))
+            x = float(row.get("x_norm", -1))
+            y = float(row.get("y_norm", -1))
+            if 0.0 <= x <= 1.0 and 0.0 <= y <= 1.0:
+                ball_coords[f_num] = (x, y)
+        except ValueError:
+            continue
 
 print("\nCreating overlay video...")
 detections_sorted = sorted(DETECTIONS, key=lambda d: d[0])
@@ -140,14 +185,22 @@ while True:
             right_score += 1
         next_det_idx += 1
 
-    cv2.putText(frame, f"LEFT {left_score} - {right_score} RIGHT", (30, 50),
-                cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 3)
+    cv2.rectangle(frame, (30, 30), (550, 120), (0, 0, 0), -1)
+    cv2.putText(frame, f"LEFT {left_score} - {right_score} RIGHT", (50, 95),
+                cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 4)
 
     for det_frame, label, conf in detections_sorted:
         if det_frame <= frame_no < det_frame + HOLD_FRAMES:
             text = f"{label} POINT! ({conf:.2f})"
             color = (0, 255, 255) if label == "LEFT" else (255, 0, 255)
-            cv2.putText(frame, text, (30, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 3)
+            cv2.putText(frame, text, (30, 170), cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 4)
+
+    if frame_no in ball_coords:
+        x_norm, y_norm = ball_coords[frame_no]
+        x_px = int(x_norm * width)
+        y_px = int(y_norm * height)
+        cv2.circle(frame, (x_px, y_px), 12, (0, 255, 0), -1)
+        cv2.circle(frame, (x_px, y_px), 14, (255, 255, 255), 2)
 
     writer.write(frame)
     frame_no += 1

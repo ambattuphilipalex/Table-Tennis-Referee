@@ -5,6 +5,35 @@ from torch.utils.data import DataLoader
 LEFT_SCORES = ["left_winner", "right_out", "right_net", "right_miss", "right_not_hitting"]
 RIGHT_SCORES = ["right_winner", "left_out", "left_net", "left_miss", "left_not_hitting"]
 
+import cv2
+import numpy as np
+
+def verify_visual_score_change(cap, event_frame, pred_cls, game_bboxes, max_frames_ahead=240):
+    box_key = "left_score" if pred_cls == 1 else "right_score"
+    x1, y1, x2, y2 = game_bboxes[box_key]
+
+    cap.set(cv2.CAP_PROP_POS_FRAMES, event_frame)
+    ret1, frame1 = cap.read()
+    if not ret1:
+        return False
+    
+    crop_base = cv2.cvtColor(frame1[y1:y2, x1:x2], cv2.COLOR_BGR2GRAY)
+
+    for offset in range(30, max_frames_ahead + 1, 30):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, event_frame + offset)
+        ret2, frame_check = cap.read()
+        if not ret2:
+            continue
+
+        crop_check = cv2.cvtColor(frame_check[y1:y2, x1:x2], cv2.COLOR_BGR2GRAY)
+        diff = cv2.absdiff(crop_base, crop_check)
+        change_score = np.mean(diff)
+
+        if change_score > 3.0: 
+            return True
+
+    return False
+
 
 def load_gt_events(event_json_path):
     with open(event_json_path, 'r') as f:
