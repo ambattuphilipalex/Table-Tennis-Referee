@@ -127,7 +127,8 @@ def plot_curves(history: list[dict], baseline_mean_px: float, out_path: Path) ->
 
 
 def gather_ball(split: ConcatDataset) -> torch.Tensor:
-    return torch.cat([d.ball.float() for d in split.datasets])
+    return torch.cat([d.ball[torch.as_tensor(d.idx, dtype=torch.long)].float()
+                      for d in split.datasets])
 
 
 def main() -> None:
