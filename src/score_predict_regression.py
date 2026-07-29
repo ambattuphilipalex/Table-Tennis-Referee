@@ -1,18 +1,25 @@
 import torch
 from torch.utils.data import DataLoader
-
+import argparse
 from score_head_regression import ScorePredictorSequential
 from score_dataset_regression import SequentialScoreDataset
 from score_eval_utils import load_gt_events, verify_visual_score_change
-
+from pathlib import Path
 import json
 import cv2
 
 
 def predict_regression(cache_path, event_json, csv_path,
-                        model_path="score_predictor_sequential.pth",
-                        confidence_threshold=0.70, chunk_len=256):
+                       model_path="score_predictor_sequential.pth",
+                       confidence_threshold=0.70, chunk_len=256,
+                       game=None, video_path=None,
+                       use_scoreboard_verification=False):
     device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    game = game or Path(cache_path).parent.name
+    if video_path is None:
+        split = "train" if game.startswith("game") else "test"
+        video_path = f"data/OpenTT/videos/{split}/{game}.mp4"
 
     gt_left, gt_right = load_gt_events(event_json)
     true_left, true_right = len(gt_left), len(gt_right)
@@ -91,37 +98,40 @@ def predict_regression(cache_path, event_json, csv_path,
         i = j
     detections = sorted(filtered, key=lambda x: x["predicted_frame"])
 
-    print(f"\nClustered events to verify: {len(detections)}")
-    with open("data/OpenTT_Preprocess/video_bboxes.json", "r") as f:
-        all_bboxes = json.load(f)
-    game_bboxes = all_bboxes["game_3"]
+    if use_scoreboard_verification:
+        print(f"\nClustered events to verify: {len(detections)}")
+        with open("data/OpenTT_Preprocess/video_bboxes.json", "r") as f:
+            all_bboxes = json.load(f)
+        game_bboxes = all_bboxes[game]
 
-    video_path = "data/OpenTT/videos/train/game_3.mp4"
-    cap = cv2.VideoCapture(video_path)
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise SystemExit(f"Could not open video for verification: {video_path}")
 
-    verified_detections = []
-    for idx, d in enumerate(detections):
-        
-        confirmed = verify_visual_score_change(
-            cap, 
-            d["predicted_frame"], 
-            d["event_type"], 
-            game_bboxes, 
-            max_frames_ahead=240
-        )
-        
-        if confirmed:
-            d["confidence"] = min(d["confidence"] + 0.15, 1.0)
-            print(f"  [{idx+1}/{len(detections)}] VERIFIED: Point detected at frame {d['predicted_frame']}")
-        else:
-            d["confidence"] = max(d["confidence"] - 0.40, 0.0)
-            print(f"  [{idx+1}/{len(detections)}] FAILED: Graphic didn't change at {d['predicted_frame']} (penalizing)")
-            
-        if d["confidence"] >= confidence_threshold:
-            verified_detections.append(d)
-            
-    cap.release()
-    detections = verified_detections
+        verified_detections = []
+        for idx, d in enumerate(detections):
+            confirmed = verify_visual_score_change(
+                cap,
+                d["predicted_frame"],
+                d["event_type"],
+                game_bboxes,
+                max_frames_ahead=240
+            )
+
+            if confirmed:
+                d["confidence"] = min(d["confidence"] + 0.15, 1.0)
+                print(f"  [{idx+1}/{len(detections)}] VERIFIED: Point detected at frame {d['predicted_frame']}")
+            else:
+                d["confidence"] = max(d["confidence"] - 0.40, 0.0)
+                print(f"  [{idx+1}/{len(detections)}] FAILED: Graphic didn't change at {d['predicted_frame']} (penalizing)")
+
+            if d["confidence"] >= confidence_threshold:
+                verified_detections.append(d)
+
+        cap.release()
+        detections = verified_detections
+    else:
+        print(f"\nScoreboard verification OFF — keeping all {len(detections)} clustered detections")
 
     left_count = sum(1 for d in detections if d["event_type"] == 1)
     right_count = sum(1 for d in detections if d["event_type"] == 2)
@@ -161,8 +171,24 @@ def predict_regression(cache_path, event_json, csv_path,
 
 
 if __name__ == "__main__":
+    p = argparse.ArgumentParser(
+        description="Run the trained sequential scoring model on a game and report the scoreline.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    p.add_argument("--game", default="game_3")
+    p.add_argument("--cache-root", default="data/dino_cache")
+    p.add_argument("--runs-dir", default="runs/20260704-1040_baseline")
+    p.add_argument("--verify-scoreboard", action="store_true",
+                   help="cross-check detections against the on-screen scoreboard "
+                        "(needs a visible scoreboard; off by default)")
+    args = p.parse_args()
+
+    split = "train" if args.game.startswith("game") else "test"
+    cache_path = f"{args.cache_root}/{args.game}/cache.pt"
+    event_json = f"data/OpenTT/annotations/{split}/{args.game}.json"
+    csv_path   = f"{args.runs_dir}/{args.game}_predictions.csv"
+
     predict_regression(
-        "data/dino_cache/game_3/cache.pt",
-        "data/OpenTT/annotations/train/game_3.json",
-        "runs/20260704-1040_baseline/game_3_predictions.csv",
+        cache_path, event_json, csv_path,
+        game=args.game,
+        use_scoreboard_verification=args.verify_scoreboard,
     )
