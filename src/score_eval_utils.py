@@ -2,11 +2,10 @@ import json
 import torch
 from torch.utils.data import DataLoader
 
-LEFT_SCORES = ["left_winner", "right_out", "right_net", "right_miss", "right_not_hitting"]
-RIGHT_SCORES = ["right_winner", "left_out", "left_net", "left_miss", "left_not_hitting"]
-
 import cv2
 import numpy as np
+
+from score_constants import LEFT_SCORES, RIGHT_SCORES
 
 def verify_visual_score_change(cap, event_frame, pred_cls, game_bboxes, max_frames_ahead=240):
     box_key = "left_score" if pred_cls == 1 else "right_score"

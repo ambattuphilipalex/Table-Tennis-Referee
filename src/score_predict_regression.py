@@ -1,168 +1,102 @@
+import argparse
+import json
+import sys
+from pathlib import Path
+
 import torch
 from torch.utils.data import DataLoader
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from eval_stage2 import evaluate_stage2, append_result
 from score_head_regression import ScorePredictorSequential
 from score_dataset_regression import SequentialScoreDataset
 from score_eval_utils import load_gt_events, verify_visual_score_change
 
-import json
-import cv2
 
-
+@torch.no_grad()
 def predict_regression(cache_path, event_json, csv_path,
-                        model_path="score_predictor_sequential.pth",
-                        confidence_threshold=0.70, chunk_len=256):
+                       model_path="score_predictor_sequential.pth",
+                       confidence_threshold=0.65, chunk_len=256,
+                       use_zone_filter=True, use_scoreboard=False,
+                       game="game_3", exp_id=None):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     gt_left, gt_right = load_gt_events(event_json)
-    true_left, true_right = len(gt_left), len(gt_right)
-    print(f"Ground Truth: {true_left} Left, {true_right} Right")
+    print(f"Ground truth: {len(gt_left)} left, {len(gt_right)} right")
 
     dataset = SequentialScoreDataset(cache_path, event_json, csv_path, chunk_len=chunk_len)
-    feature_dim = dataset.feature_dim + 3  # + ball coords (x, y, fresh)
-
-    model = ScorePredictorSequential(feature_dim=feature_dim).to(device)
+    model = ScorePredictorSequential(feature_dim=dataset.feature_dim + 3).to(device)
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
 
-    print("\nRunning predictions (fully autoregressive, chunks in order)...")
     loader = DataLoader(dataset, batch_size=1, shuffle=False)
     hidden, score = None, None
+    per_frame = []
 
-    raw_predictions = []
-    with torch.no_grad():
-        for batch in loader:
-            if bool(batch["is_run_start"].item()):
-                hidden, score = None, None
+    for batch in loader:
+        if bool(batch["is_run_start"].item()):
+            hidden, score = None, None
+        feats = batch["features"].to(device)
+        frame_numbers = batch["frame_numbers"][0].tolist()
+        score_in = score if score is not None else batch["score_state"].to(device)
 
-            feats = batch["features"].to(device)
-            frame_numbers = batch["frame_numbers"][0].tolist()
-            score_in = score if score is not None else batch["score_state"].to(device)
+        frames_pred, type_logits, hidden, score = model(
+            feats, score_in, hidden=hidden, teacher_event_type=None)
+        probs = torch.softmax(type_logits, dim=-1)[0]
+        pred_cls = torch.argmax(type_logits, dim=-1)[0]
+        frames_until = frames_pred[0, :, 0] * dataset.max_frames_ahead
 
-            frames_pred, type_logits, hidden, score = model(
-                feats, score_in, hidden=hidden, teacher_event_type=None
-            )
-            probs = torch.softmax(type_logits, dim=-1)[0]              # [L, 3]
-            pred_cls = torch.argmax(type_logits, dim=-1)[0]             # [L]
-            frames_until = frames_pred[0, :, 0] * dataset.max_frames_ahead  # [L]
+        for i, real_frame in enumerate(frame_numbers):
+            cls = pred_cls[i].item()
+            conf = probs[i, cls].item()
+            # this arm's speciality: shift the firing onto its predicted event frame
+            fu = frames_until[i].item()
+            frame_out = int(real_frame) + (max(0, int(fu)) if cls != 0 else 0)
+            per_frame.append((frame_out, int(cls), float(conf)))
 
-            for i, real_frame in enumerate(frame_numbers):
-                cls = pred_cls[i].item()
-                conf = probs[i, cls].item()
-                fu = frames_until[i].item()
-                if cls != 0 and conf >= confidence_threshold and 0 <= fu <= dataset.max_frames_ahead:
-                    predicted_event_frame = real_frame + max(0, int(fu))
-                    raw_predictions.append({
-                        "predicted_frame": predicted_event_frame,
-                        "event_type": cls,
-                        "confidence": conf,
-                    })
+    if use_scoreboard:
+        import cv2
+        with open("data/OpenTT_Preprocess/video_bboxes.json") as f:
+            bboxes = json.load(f)[game]
+        split = "test" if game.startswith("test") else "train"
+        cap = cv2.VideoCapture(f"data/OpenTT/videos/{split}/{game}.mp4")
+        adjusted = []
+        for frame, cls, conf in per_frame:
+            if cls != 0 and conf >= confidence_threshold:
+                ok = verify_visual_score_change(cap, frame, cls, bboxes, max_frames_ahead=240)
+                conf = min(conf + 0.15, 1.0) if ok else max(conf - 0.40, 0.0)
+            adjusted.append((frame, cls, conf))
+        cap.release()
+        per_frame = adjusted
 
-    print(f"Raw predictions (unfiltered): {len(raw_predictions)}")
-    raw_predictions.sort(key=lambda x: x["predicted_frame"])
-
-    detections = []
-    for cls in (1, 2):
-        cls_preds = [p for p in raw_predictions if p["event_type"] == cls]
-        if not cls_preds:
-            continue
-        cluster = [cls_preds[0]]
-        for p in cls_preds[1:]:
-            if p["predicted_frame"] - cluster[-1]["predicted_frame"] <= 120:
-                cluster.append(p)
-            else:
-                detections.append(max(cluster, key=lambda x: x["confidence"]))
-                cluster = [p]
-        if cluster:
-            detections.append(max(cluster, key=lambda x: x["confidence"]))
-
-    detections.sort(key=lambda x: x["predicted_frame"])
-    filtered = []
-    i = 0
-    while i < len(detections):
-        current = detections[i]
-        j = i + 1
-        while j < len(detections) and detections[j]["predicted_frame"] - current["predicted_frame"] < 300:
-            if detections[j]["event_type"] != current["event_type"]:
-                if detections[j]["confidence"] > current["confidence"]:
-                    current = detections[j]
-            j += 1
-        filtered.append(current)
-        i = j
-    detections = sorted(filtered, key=lambda x: x["predicted_frame"])
-
-    print(f"\nClustered events to verify: {len(detections)}")
-    with open("data/OpenTT_Preprocess/video_bboxes.json", "r") as f:
-        all_bboxes = json.load(f)
-    game_bboxes = all_bboxes["game_3"]
-
-    video_path = "data/OpenTT/videos/train/game_3.mp4"
-    cap = cv2.VideoCapture(video_path)
-
-    verified_detections = []
-    for idx, d in enumerate(detections):
-        
-        confirmed = verify_visual_score_change(
-            cap, 
-            d["predicted_frame"], 
-            d["event_type"], 
-            game_bboxes, 
-            max_frames_ahead=240
-        )
-        
-        if confirmed:
-            d["confidence"] = min(d["confidence"] + 0.15, 1.0)
-            print(f"  [{idx+1}/{len(detections)}] VERIFIED: Point detected at frame {d['predicted_frame']}")
-        else:
-            d["confidence"] = max(d["confidence"] - 0.40, 0.0)
-            print(f"  [{idx+1}/{len(detections)}] FAILED: Graphic didn't change at {d['predicted_frame']} (penalizing)")
-            
-        if d["confidence"] >= confidence_threshold:
-            verified_detections.append(d)
-            
-    cap.release()
-    detections = verified_detections
-
-    left_count = sum(1 for d in detections if d["event_type"] == 1)
-    right_count = sum(1 for d in detections if d["event_type"] == 2)
-
-    print(f"\n{'='*60}\nDETECTED EVENTS:\n{'='*60}")
-    for d in detections:
-        label = "LEFT " if d["event_type"] == 1 else "RIGHT"
-        print(f"  {label} at frame ~{d['predicted_frame']} (conf={d['confidence']:.3f})")
-
-    hits = misses = 0
-    matched_gt = set()
-    for d in detections:
-        gt_list = gt_left if d["event_type"] == 1 else gt_right
-        match = None
-        for f in gt_list:
-            if f not in matched_gt and -30 <= (f - d["predicted_frame"]) <= 150:
-                match = f
-                break
-        if match is not None:
-            matched_gt.add(match)
-            hits += 1
-        else:
-            misses += 1
-
-    total_gt = true_left + true_right
-    recall = len(matched_gt) / total_gt if total_gt else 0.0
-    precision = hits / (hits + misses) if (hits + misses) else 0.0
-    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
-
-    print(f"\n{'='*30}\nFINAL RESULTS\n{'='*30}")
-    print(f"True Score:     {true_left} - {true_right}")
-    print(f"Predicted:      {left_count} - {right_count}")
-    print(f"Hits: {hits}, Misses: {misses}")
-    print(f"Recall: {len(matched_gt)}/{total_gt} ({100*recall:.1f}%)")
-    print(f"Precision: {100*precision:.1f}%")
-    print(f"F1: {f1:.3f}")
+    metrics = evaluate_stage2(per_frame, gt_left, gt_right, dataset.coords_dict,
+                              min_confidence=confidence_threshold,
+                              use_zone_filter_at_predict=use_zone_filter,
+                              max_frames_ahead=dataset.max_frames_ahead, verbose=True)
+    if exp_id:
+        append_result(exp_id, "reg", None, metrics,
+                      {"model_path": model_path, "min_conf": confidence_threshold,
+                       "zone_predict": use_zone_filter, "scoreboard": use_scoreboard,
+                       "csv_path": csv_path}, game=game)
+    return metrics
 
 
 if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--game", default="game_3")
+    ap.add_argument("--model", default="score_predictor_sequential.pth")
+    ap.add_argument("--csv-dir", default="runs/20260704-1040_baseline")
+    ap.add_argument("--min-conf", type=float, default=0.65)
+    ap.add_argument("--zone-filter", type=int, default=1)
+    ap.add_argument("--scoreboard", action="store_true")
+    ap.add_argument("--exp-id", default=None)
+    a = ap.parse_args()
+    split = "test" if a.game.startswith("test") else "train"
     predict_regression(
-        "data/dino_cache/game_3/cache.pt",
-        "data/OpenTT/annotations/train/game_3.json",
-        "runs/20260704-1040_baseline/game_3_predictions.csv",
-    )
+        f"data/dino_cache/{a.game}/cache.pt",
+        f"data/OpenTT/annotations/{split}/{a.game}.json",
+        f"{a.csv_dir}/{a.game}_predictions.csv",
+        model_path=a.model, confidence_threshold=a.min_conf,
+        use_zone_filter=bool(a.zone_filter), use_scoreboard=a.scoreboard,
+        game=a.game, exp_id=a.exp_id)

@@ -2,12 +2,10 @@ import json
 from collections import Counter
 from pathlib import Path
 
+from score_constants import LEFT_SCORES, RIGHT_SCORES
+
 DATA_ROOT = Path(__file__).resolve().parents[1] / "data"
 EVENT_ROOT = DATA_ROOT / "OpenTT" / "annotations" / "train"
-
-LEFT_SCORES = ["left_winner", "right_out", "right_net", "right_miss", "right_not_hitting"]
-RIGHT_SCORES = ["right_winner", "left_out", "left_net", "left_miss", "left_not_hitting"]
-
 
 def subtype_counts(events, score_list):
     counts = Counter()

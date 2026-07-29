@@ -10,6 +10,11 @@ uncond_text.pt
 __pycache__/
 *.pyc
 .DS_Store
+*.csv
+*.mp4
+*.pt
+*.pth
+*.sh
 
 
 # credentials
@@ -24,6 +29,8 @@ third_party/
 
 dino_cache/
 runs/
+logs/
+experiments/
 
 data/OpenTT/videos
 

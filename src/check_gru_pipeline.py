@@ -3,12 +3,11 @@ import json
 import torch
 from pathlib import Path
 
+from score_constants import LEFT_SCORES, RIGHT_SCORES
+
 DATA_ROOT = Path(__file__).resolve().parents[1] / "data"
 CACHE_ROOT = DATA_ROOT / "dino_cache"
 EVENT_ROOT = DATA_ROOT / "OpenTT" / "annotations" / "train"
-
-LEFT_SCORES = ["left_winner", "right_out", "right_net", "right_miss", "right_not_hitting"]
-RIGHT_SCORES = ["right_winner", "left_out", "left_net", "left_miss", "left_not_hitting"]
 
 EVENT_MATCH_TOLERANCE = 30 
 

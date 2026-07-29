@@ -5,6 +5,8 @@ from pathlib import Path
 import torch
 from torch.utils.data import Dataset
 
+from score_constants import LEFT_SCORES, RIGHT_SCORES
+
 
 class SequentialScoreDataset(Dataset):
     def __init__(self, cache_path, event_json_path, csv_path,
@@ -31,9 +33,9 @@ class SequentialScoreDataset(Dataset):
         self.chunk_len = chunk_len
         self.max_frames_ahead = max_frames_ahead
 
-        self.left_scores = ["left_winner", "right_out", "right_net", "right_miss", "right_not_hitting"]
-        self.right_scores = ["right_winner", "left_out", "left_net", "left_miss", "left_not_hitting"]
+        self.left_scores = LEFT_SCORES
 
+        self.right_scores = RIGHT_SCORES
         self.left_event_frames = sorted(
             int(fno) for fno, ev in self.events.items() if any(s in ev for s in self.left_scores)
         )
