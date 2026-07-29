@@ -1,5 +1,17 @@
+"""
+overlay_scores.py -- draw predicted vs ground-truth scoreline AND predicted vs
+ground-truth ball position over a game or test video.
 
+  (b) step-wise score prediction  -> running PRED score
+  (c) step-wise score + 2D ball   -> yellow box = predicted ball
+  (d) GT vs predicted overlay     -> PRED/TRUE scorelines, red box = true ball
+
+Run from the repo root:
+    python src/overlay_scores.py --game game_3 --max-frames 3000
+    python src/overlay_scores.py --game test_6
+"""
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -10,14 +22,16 @@ from torch.utils.data import DataLoader
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from score_eval_utils import load_gt_events
-BOX_HALF = 22   
-BALL_RADIUS = 12
-BALL_COLOR = (0, 255, 255)      # yellow (BGR)
-PRED_COLOR = (0, 200, 255)      # orange
-TRUE_COLOR = (0, 255, 0)        # green
+
+BOX_HALF = 22
+BALL_COLOR = (0, 255, 255)      # yellow  - predicted ball
+GT_COLOR = (0, 0, 255)          # red     - true ball  (matches Stage-1 overlay.py)
+PRED_COLOR = (0, 200, 255)      # orange  - predicted score
+TRUE_COLOR = (0, 255, 0)        # green   - true score
+LINE_COLOR = (255, 255, 255)
 HOLD_FRAMES = 60
-CLUSTER_GAP = 120               # firings this close are the same point
-CONFLICT_GAP = 300              # left/right disagreements this close -> keep best
+CLUSTER_GAP = 120               
+CONFLICT_GAP = 300              
 
 
 def parse_args():
@@ -31,12 +45,33 @@ def parse_args():
     p.add_argument("--out", default=None, help="output mp4 (default annotated_<game>.mp4)")
     p.add_argument("--min-conf", type=float, default=0.65)
     p.add_argument("--chunk-len", type=int, default=256)
+    p.add_argument("--fps", type=float, default=None,
+                   help="output fps; lower = slow motion (source is ~120)")
+    p.add_argument("--only-labeled", action="store_true",
+                   help="write only frames that have a ball prediction (short clip, "
+                        "box never disappears, but the footage jumps in time)")
     p.add_argument("--shift-by-countdown", action="store_true",
                    help="reg arm only: shift each firing forward by its predicted "
                         "countdown. OFF by default -- that head is not trained in "
                         "the current run_experiment.py loop.")
     p.add_argument("--max-frames", type=int, default=None, help="stop after N frames")
     return p.parse_args()
+
+
+def load_gt_ball(split, game):
+    """frame_no -> (x_px, y_px) from the original annotations. Skips invalid (-1)."""
+    path = Path(f"data/OpenTT/annotations/{split}/{game}_ball.json")
+    if not path.exists():
+        print(f"  (no ground-truth ball file at {path} -- red box disabled)")
+        return {}
+    with open(path) as f:
+        raw = json.load(f)
+    out = {}
+    for k, v in raw.items():
+        if v["x"] == -1 or v["y"] == -1:
+            continue
+        out[int(k)] = (int(v["x"]), int(v["y"]))
+    return out
 
 
 def build(args, cache_path, event_json, csv_path, device):
@@ -79,6 +114,9 @@ def main():
     gt_left, gt_right = load_gt_events(event_json)
     gt_left, gt_right = sorted(gt_left), sorted(gt_right)
     print(f"ground truth: {len(gt_left)} left, {len(gt_right)} right")
+
+    gt_ball = load_gt_ball(split, args.game)
+    print(f"ground-truth ball positions: {len(gt_ball)} frames")
 
     dataset, model = build(args, cache_path, event_json, csv_path, device)
 
@@ -157,17 +195,19 @@ def main():
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise SystemExit(f"could not open {video_path}")
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    src_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    fps = args.fps or src_fps
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    print(f"video {w}x{h} @ {fps:.1f}fps, {total} frames -> {out_path}")
+    print(f"video {w}x{h} @ {src_fps:.1f}fps -> writing at {fps:.1f}fps, "
+          f"{total} frames -> {out_path}")
 
     writer = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
 
     left = right = gl = gr = 0
     di = li = ri = 0
-    frame_no = 0
+    frame_no = written = 0
 
     while True:
         ok, frame = cap.read()
@@ -202,18 +242,32 @@ def main():
                             cv2.FONT_HERSHEY_SIMPLEX, 1.1, PRED_COLOR, 3, cv2.LINE_AA)
                 break
 
+        # --- ground-truth ball (red) ---
+        gt_xy = gt_ball.get(frame_no)
+        if gt_xy is not None:
+            gx, gy = gt_xy
+            cv2.rectangle(frame, (gx - BOX_HALF, gy - BOX_HALF),
+                          (gx + BOX_HALF, gy + BOX_HALF), GT_COLOR, 2, cv2.LINE_AA)
+            cv2.putText(frame, "true", (gx - BOX_HALF, gy + BOX_HALF + 18),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, GT_COLOR, 1, cv2.LINE_AA)
+
+        # --- predicted ball (yellow) ---
         coords = dataset.coords_dict.get(frame_no)
-        if coords is not None:
-            x_norm, y_norm, fresh = coords[0], coords[1], coords[2]
-            if fresh > 0.5:
-                px, py = int(x_norm * w), int(y_norm * h)
-                b = BOX_HALF                      # half the box width
-                cv2.rectangle(frame, (px - b, py - b), (px + b, py + b),
-                              BALL_COLOR, 2, cv2.LINE_AA)
-                cv2.line(frame, (px - 4, py), (px + 4, py), BALL_COLOR, 1, cv2.LINE_AA)
-                cv2.line(frame, (px, py - 4), (px, py + 4), BALL_COLOR, 1, cv2.LINE_AA)
-                cv2.putText(frame, "ball", (px - b, py - b - 6),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, BALL_COLOR, 1, cv2.LINE_AA)
+        px = py = None
+        if coords is not None and coords[2] > 0.5:
+            px, py = int(coords[0] * w), int(coords[1] * h)
+            cv2.rectangle(frame, (px - BOX_HALF, py - BOX_HALF),
+                          (px + BOX_HALF, py + BOX_HALF), BALL_COLOR, 2, cv2.LINE_AA)
+            cv2.line(frame, (px - 4, py), (px + 4, py), BALL_COLOR, 1, cv2.LINE_AA)
+            cv2.line(frame, (px, py - 4), (px, py + 4), BALL_COLOR, 1, cv2.LINE_AA)
+            cv2.putText(frame, "pred", (px - BOX_HALF, py - BOX_HALF - 6),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, BALL_COLOR, 1, cv2.LINE_AA)
+
+        if gt_xy is not None and px is not None:
+            cv2.line(frame, (gx, gy), (px, py), LINE_COLOR, 1, cv2.LINE_AA)
+            err = ((gx - px) ** 2 + (gy - py) ** 2) ** 0.5
+            cv2.putText(frame, f"{err:.0f}px", (px + BOX_HALF + 6, py),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, LINE_COLOR, 1, cv2.LINE_AA)
 
         if frame_no in per_frame_pred:
             cls, conf = per_frame_pred[frame_no]
@@ -223,14 +277,17 @@ def main():
                             (30, h - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
                             (210, 210, 210), 2, cv2.LINE_AA)
 
-        writer.write(frame)
+        if not args.only_labeled or px is not None:
+            writer.write(frame)
+            written += 1
+
         frame_no += 1
         if frame_no % 5000 == 0:
-            print(f"  {frame_no}/{total}")
+            print(f"  {frame_no}/{total}  (written {written})")
 
     cap.release()
     writer.release()
-    print(f"\ndone -> {out_path}")
+    print(f"\ndone -> {out_path}   ({written} frames written)")
     print(f"final: predicted {left}-{right}   true {gl}-{gr}")
 
 
