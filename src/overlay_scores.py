@@ -1,5 +1,4 @@
 
-
 import argparse
 import sys
 from pathlib import Path
@@ -10,15 +9,13 @@ from torch.utils.data import DataLoader
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from score_dataset_regression import SequentialScoreDataset
-from score_head_regression import ScorePredictorSequential
 from score_eval_utils import load_gt_events
 
 BALL_RADIUS = 12
-BALL_COLOR = (0, 255, 255)      # yellow  (BGR)
+BALL_COLOR = (0, 255, 255)      # yellow (BGR)
 PRED_COLOR = (0, 200, 255)      # orange
 TRUE_COLOR = (0, 255, 0)        # green
-HOLD_FRAMES = 60                
+HOLD_FRAMES = 60
 CLUSTER_GAP = 120               # firings this close are the same point
 CONFLICT_GAP = 300              # left/right disagreements this close -> keep best
 
@@ -26,24 +23,40 @@ CONFLICT_GAP = 300              # left/right disagreements this close -> keep be
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--game", default="test_6",
-                   help="game_1..game_5 or test_1..test_7")
-    p.add_argument("--arm", choices=["reg", "cls"], default="reg",
-                   help="which trained model to use")
-    p.add_argument("--model", default="score_predictor_sequential.pth")
+    p.add_argument("--game", default="game_3", help="game_1..game_5 or test_1..test_7")
+    p.add_argument("--arm", choices=["reg", "cls"], default="cls")
+    p.add_argument("--model", default="score_predictor_cls_sequential.pth")
     p.add_argument("--cache-root", default="data/dino_cache")
-    p.add_argument("--runs-dir", default="runs/20260704-1040_baseline",
-                   help="folder holding <game>_predictions.csv")
+    p.add_argument("--runs-dir", default="runs/20260704-1040_baseline")
     p.add_argument("--out", default=None, help="output mp4 (default annotated_<game>.mp4)")
     p.add_argument("--min-conf", type=float, default=0.65)
     p.add_argument("--chunk-len", type=int, default=256)
     p.add_argument("--shift-by-countdown", action="store_true",
-                   help="reg arm only: move each firing forward by its predicted "
-                        "countdown. OFF by default because the countdown head is "
-                        "not trained in the current run_experiment.py loop.")
-    p.add_argument("--max-frames", type=int, default=None,
-                   help="stop after N frames (quick preview)")
+                   help="reg arm only: shift each firing forward by its predicted "
+                        "countdown. OFF by default -- that head is not trained in "
+                        "the current run_experiment.py loop.")
+    p.add_argument("--max-frames", type=int, default=None, help="stop after N frames")
     return p.parse_args()
+
+
+def build(args, cache_path, event_json, csv_path, device):
+    """Return (dataset, model) for the chosen arm. Built ONCE, before the loop."""
+    if args.arm == "cls":
+        from score_dataset import SequentialClsDataset
+        from score_head import ScorePredictorClsSequential
+        ds = SequentialClsDataset(cache_path, event_json, csv_path,
+                                  chunk_len=args.chunk_len, max_frames_ahead=30)
+        model = ScorePredictorClsSequential(feature_dim=ds.feature_dim).to(device)
+    else:
+        from score_dataset_regression import SequentialScoreDataset
+        from score_head_regression import ScorePredictorSequential
+        ds = SequentialScoreDataset(cache_path, event_json, csv_path,
+                                    chunk_len=args.chunk_len)
+        model = ScorePredictorSequential(feature_dim=ds.feature_dim + 3).to(device)
+
+    model.load_state_dict(torch.load(args.model, map_location=device))
+    model.eval()
+    return ds, model
 
 
 def main():
@@ -67,16 +80,7 @@ def main():
     gt_left, gt_right = sorted(gt_left), sorted(gt_right)
     print(f"ground truth: {len(gt_left)} left, {len(gt_right)} right")
 
-    dataset = SequentialScoreDataset(cache_path, event_json, csv_path,
-                                     chunk_len=args.chunk_len)
-
-    if args.arm == "cls":
-        from score_head import ScorePredictorClsSequential
-        model = ScorePredictorClsSequential(feature_dim=dataset.feature_dim).to(device)
-    else:
-        model = ScorePredictorSequential(feature_dim=dataset.feature_dim + 3).to(device)
-    model.load_state_dict(torch.load(args.model, map_location=device))
-    model.eval()
+    dataset, model = build(args, cache_path, event_json, csv_path, device)
 
     print("running model ...")
     loader = DataLoader(dataset, batch_size=1, shuffle=False)
@@ -147,7 +151,8 @@ def main():
 
     pl = sum(1 for d in dets if d["cls"] == 1)
     pr = sum(1 for d in dets if d["cls"] == 2)
-    print(f"detections: {len(dets)}   predicted {pl}-{pr}   true {len(gt_left)}-{len(gt_right)}")
+    print(f"detections: {len(dets)}   predicted {pl}-{pr}   "
+          f"true {len(gt_left)}-{len(gt_right)}")
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -160,10 +165,8 @@ def main():
 
     writer = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
 
-    left, right = 0, 0
-    gl, gr = 0, 0
-    di = 0                      
-    li, ri = 0, 0               
+    left = right = gl = gr = 0
+    di = li = ri = 0
     frame_no = 0
 
     while True:
@@ -201,7 +204,7 @@ def main():
 
         coords = dataset.coords_dict.get(frame_no)
         if coords is not None:
-            x_norm, y_norm, fresh = coords
+            x_norm, y_norm, fresh = coords[0], coords[1], coords[2]
             if fresh > 0.5:
                 px, py = int(x_norm * w), int(y_norm * h)
                 cv2.circle(frame, (px, py), BALL_RADIUS, BALL_COLOR, -1, cv2.LINE_AA)
