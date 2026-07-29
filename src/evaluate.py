@@ -9,7 +9,12 @@ from torch.utils.data import DataLoader
 from ball_head import BallHead
 from cache_dataset import CACHE_ROOT, CachedBallDataset
 from metrics import DEFAULT_THRESHOLDS, ORIG_WH, denormalize, mean_predictor_baseline, pixel_errors, summarize
-
+if torch.cuda.is_available():
+    device = "cuda"
+elif torch.backends.mps.is_available():
+    device = "mps"
+else:
+    device = "cpu"
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument("--ckpt", type=Path, required=True)

@@ -26,7 +26,7 @@ config/platform/local_akopyane.yaml
 
 # third-party dependencies
 third_party/
-
+dino_cache_784/
 dino_cache/
 runs/
 logs/
