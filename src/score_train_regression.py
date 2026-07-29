@@ -8,7 +8,7 @@ from score_head_regression import ScorePredictorSequential
 from score_dataset_regression import SequentialScoreDataset
 from score_eval_regression import run_autoregressive_eval, print_frame_samples
 
-TRAIN_GAME_IDS = ["1", "2", "3", "4", "5"]
+TRAIN_GAME_IDS = ["1", "2", "4", "5"]
 EVAL_GAME_ID = "3"
 VAL_CHECK_EVERY = 5
 CHUNK_LEN = 256
