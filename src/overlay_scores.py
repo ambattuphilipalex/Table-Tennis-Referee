@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from score_eval_utils import load_gt_events
-
+BOX_HALF = 22   
 BALL_RADIUS = 12
 BALL_COLOR = (0, 255, 255)      # yellow (BGR)
 PRED_COLOR = (0, 200, 255)      # orange
@@ -207,8 +207,13 @@ def main():
             x_norm, y_norm, fresh = coords[0], coords[1], coords[2]
             if fresh > 0.5:
                 px, py = int(x_norm * w), int(y_norm * h)
-                cv2.circle(frame, (px, py), BALL_RADIUS, BALL_COLOR, -1, cv2.LINE_AA)
-                cv2.circle(frame, (px, py), BALL_RADIUS + 2, (0, 0, 0), 2, cv2.LINE_AA)
+                b = BOX_HALF                      # half the box width
+                cv2.rectangle(frame, (px - b, py - b), (px + b, py + b),
+                              BALL_COLOR, 2, cv2.LINE_AA)
+                cv2.line(frame, (px - 4, py), (px + 4, py), BALL_COLOR, 1, cv2.LINE_AA)
+                cv2.line(frame, (px, py - 4), (px, py + 4), BALL_COLOR, 1, cv2.LINE_AA)
+                cv2.putText(frame, "ball", (px - b, py - b - 6),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, BALL_COLOR, 1, cv2.LINE_AA)
 
         if frame_no in per_frame_pred:
             cls, conf = per_frame_pred[frame_no]
