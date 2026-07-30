@@ -25,7 +25,7 @@ from score_dataset_regression import SequentialScoreDataset
 from score_head_regression import ScorePredictorSequential
 from score_eval_utils import load_gt_events
 
-BASELINE_RUN = "runs/20260704-1040_baseline"
+BASELINE_RUN = "runs/20260707-0746_false_ground_truth_eliminated"
 RUNS_ROOT = Path(__file__).resolve().parents[1] / "runs_stage2"
 _DS_CACHE = {}
 GRADE_WITH_ZONE_FILTER = True
@@ -73,25 +73,21 @@ def build_dataset(game, cfg):
 
 
 def make_model(feature_dim, cfg, device):
-    # cls -> bidirectional nn.GRU (the only surviving variant).
-    # reg -> unidirectional GRUCell, unchanged: ScorePredictorSequential has no
-    # bidirectional option and must not be given one.
     if cfg["arm"] == "cls":
         return ScorePredictorClsSequential(feature_dim=feature_dim).to(device)
     return ScorePredictorSequential(feature_dim=feature_dim + 3).to(device)
 
 
 def forward(model, cfg, feats, score_in, hidden):
-    """Uniform call signature across the two arms."""
     if cfg["arm"] == "reg":
-        _fu, logits, hidden, score = model(feats, score_in, hidden=hidden,
-                                           teacher_event_type=None)
-        return logits, hidden, score
+        fu, logits, hidden, score = model(feats, score_in, hidden=hidden,
+                                          teacher_event_type=None)
+        return fu, logits, hidden, score
     logits, hidden, score = model(feats, score_in, hidden=hidden)
-    return logits, hidden, score
+    return None, logits, hidden, score
 
 
-def run_epoch(model, datasets, optimizer, ce_loss, device, cfg, train):
+def run_epoch(model, datasets, optimizer, ce_loss, device, cfg, train, mse_loss=None):
     model.train() if train else model.eval()
     total_loss, n_chunks = 0.0, 0
 
@@ -108,12 +104,18 @@ def run_epoch(model, datasets, optimizer, ce_loss, device, cfg, train):
             score_in = score if score is not None else batch["score_state"].to(device)
 
             with torch.set_grad_enabled(train):
-                logits, hidden, score = forward(model, cfg, feats, score_in, hidden)
+                fu, logits, hidden, score = forward(model, cfg, feats, score_in, hidden)
 
                 if cfg["arm"] == "reg":
                     fw = batch["frame_weight"].to(device).reshape(-1)
                     per_frame = ce_loss(logits.reshape(-1, 3), event_type.reshape(-1))
                     loss = (per_frame * fw).sum() / fw.sum().clamp(min=1e-8)
+
+                    if mse_loss is not None and fu is not None:
+                        fut = batch["frames_until"].to(device).reshape(-1)
+                        mask = event_type.reshape(-1) != 0
+                        if mask.any():
+                            loss = loss + mse_loss(fu.reshape(-1)[mask], fut[mask])
                 else:
                     loss = ce_loss(logits.reshape(-1, 3), event_type.reshape(-1))
 
@@ -131,8 +133,8 @@ def run_epoch(model, datasets, optimizer, ce_loss, device, cfg, train):
 
 @torch.no_grad()
 def collect_per_frame(model, datasets, device, cfg):
-    """-> (per_frame list of (frame, cls, conf), merged coords_dict)."""
     model.eval()
+    shift = cfg["arm"] == "reg" and not cfg.get("no_countdown_shift", False)
     per_frame, coords = [], {}
     for ds in datasets:
         coords.update(ds.coords_dict)
@@ -144,12 +146,22 @@ def collect_per_frame(model, datasets, device, cfg):
             feats = batch["features"].to(device)
             frame_numbers = batch["frame_numbers"][0].tolist()
             score_in = score if score is not None else batch["score_state"].to(device)
-            logits, hidden, score = forward(model, cfg, feats, score_in, hidden)
+            fu, logits, hidden, score = forward(model, cfg, feats, score_in, hidden)
             probs = torch.softmax(logits, dim=-1)[0]
             pred = torch.argmax(logits, dim=-1)[0]
+
+            countdown = None
+            if shift and fu is not None:
+                countdown = fu[0, :, 0] * ds.max_frames_ahead  
+
             for i, f in enumerate(frame_numbers):
                 c = pred[i].item()
-                per_frame.append((int(f), int(c), float(probs[i, c])))
+                f_out = int(f)
+                if countdown is not None and c != 0:
+                    d = float(countdown[i].item())
+                    if 0.0 <= d <= ds.max_frames_ahead:
+                        f_out += int(d)          
+                per_frame.append((f_out, int(c), float(probs[i, c])))
     return per_frame, coords
 
 
@@ -170,7 +182,6 @@ def _grade(pf, coords, gt_left, gt_right, cfg, verbose=False):
                            verbose=verbose)
 
 
-# ----------------------------------------------------------------- plotting
 def plot_curves(history, baseline_macro, out_path):
     """history: list of dicts with epoch, train_loss, val_loss, macro_f1, event_f1."""
     if not history:
@@ -245,6 +256,7 @@ def run_one(cfg, seed, train_ds, eval_ds, device, seed_dir=None):
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     reduction = "none" if cfg["arm"] == "reg" else "mean"
     ce_loss = nn.CrossEntropyLoss(weight=class_weights, reduction=reduction)
+    mse_loss = nn.MSELoss() if cfg["arm"] == "reg" else None
 
     gt_left, gt_right = gt_for(eval_ds)
     best_sel, best_state, best_epoch = -1.0, None, -1
@@ -261,14 +273,16 @@ def run_one(cfg, seed, train_ds, eval_ds, device, seed_dir=None):
     sel_key = cfg.get("select_on", "frame_macro_f1_zone_filtered")
 
     for epoch in range(epochs):
-        tr = run_epoch(model, train_ds, optimizer, ce_loss, device, cfg, train=True)
+        tr = run_epoch(model, train_ds, optimizer, ce_loss, device, cfg, train=True,
+                       mse_loss=mse_loss)
         scheduler.step()
 
         row = {"type": "epoch", "epoch": epoch + 1, "train_loss": tr,
                "lr": scheduler.get_last_lr()[0]}
 
         if (epoch + 1) % val_every == 0 or epoch == epochs - 1:
-            vl = run_epoch(model, eval_ds, optimizer, ce_loss, device, cfg, train=False)
+            vl = run_epoch(model, eval_ds, optimizer, ce_loss, device, cfg, train=False,
+                           mse_loss=mse_loss)
             pf, coords = collect_per_frame(model, eval_ds, device, cfg)
             m = _grade(pf, coords, gt_left, gt_right, cfg)
             sel = m[sel_key]
@@ -364,8 +378,13 @@ def main():
     ap.add_argument("--min-conf", type=float, default=0.90)
     ap.add_argument("--test-games", nargs="*", default=[])
     ap.add_argument("--select-on", default="frame_macro_f1_zone_filtered",
-                    choices=["frame_macro_f1_zone_filtered", "frame_macro_f1", "event_f1"],
+                    choices=["frame_macro_f1_zone_filtered", "frame_macro_f1",
+                             "frame_pos_macro_f1", "frame_pos_macro_f1_zone_filtered",
+                             "event_f1", "event_macro_f1"],
                     help="metric used to keep the best checkpoint")
+    ap.add_argument("--no-countdown-shift", action="store_true",
+                    help="reg arm only: DISABLE placing each prediction at "
+                         "frame + predicted countdown (the shift is on by default)")
     ap.add_argument("--save-ckpt", action="store_true",
                     help="also write experiments/ckpt/<exp-id>_seed<N>.pth")
     ap.add_argument("--no-run-dir", action="store_true",
@@ -377,6 +396,7 @@ def main():
         "arm": args.arm, "train_games": args.train_games, "eval_games": args.eval_games,
         "epochs": args.epochs, "val_every": args.val_every, "min_conf": args.min_conf,
         "select_on": args.select_on, "note": args.note,
+        "no_countdown_shift": args.no_countdown_shift,
     }
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
