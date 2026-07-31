@@ -345,8 +345,10 @@ def eval_on(model, games, cfg, device, label):
 def summarise(ms, title, out_path=None):
     print(f"\n===== {title} over {len(ms)} seeds =====")
     summary = {"n_seeds": len(ms)}
-    for k in ["frame_macro_f1", "frame_macro_f1_zone_filtered", "event_f1",
-              "event_precision", "event_recall", "scoreline_abs_err_total"]:
+    for k in ["frame_macro_f1", "frame_macro_f1_zone_filtered", "frame_pos_macro_f1",
+              "event_f1", "event_macro_f1", "event_precision", "event_recall",
+              "detection_recall", "detection_precision", "attribution_accuracy",
+              "winner_correct", "scoreline_abs_err_total"]:
         vals = [m[k] for m in ms]
         sd = statistics.stdev(vals) if len(vals) > 1 else 0.0
         summary[k] = {"mean": statistics.mean(vals), "sd": sd,

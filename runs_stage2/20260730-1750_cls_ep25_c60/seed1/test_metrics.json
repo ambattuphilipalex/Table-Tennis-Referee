@@ -1,0 +1,83 @@
+{
+  "n_frames_scored": 6826,
+  "n_raw_firings": 407,
+  "n_detections": 23,
+  "frame_macro_f1": 0.5278313858727932,
+  "frame_macro_f1_zone_filtered": 0.5283194970921595,
+  "frame_pos_macro_f1": 0.3246086372930031,
+  "frame_pos_macro_f1_zone_filtered": 0.32531226627613785,
+  "frame_per_class": {
+    "None": {
+      "precision": 0.9034135598552776,
+      "recall": 0.9673235640896075,
+      "f1": 0.9342768830323734,
+      "support": 5937
+    },
+    "Left": {
+      "precision": 0.34782608695652173,
+      "recall": 0.2802547770700637,
+      "f1": 0.3104056437389771,
+      "support": 314
+    },
+    "Right": {
+      "precision": 0.6203703703703703,
+      "recall": 0.23304347826086957,
+      "f1": 0.3388116308470291,
+      "support": 575
+    }
+  },
+  "confusion_matrix": [
+    [
+      5743,
+      137,
+      57
+    ],
+    [
+      201,
+      88,
+      25
+    ],
+    [
+      413,
+      28,
+      134
+    ]
+  ],
+  "event_precision": 0.8260869565217391,
+  "event_recall": 0.3275862068965517,
+  "event_f1": 0.4691358024691358,
+  "event_hits": 19,
+  "event_false_alarms": 4,
+  "total_gt_events": 58,
+  "detection_recall": 0.3620689655172414,
+  "detection_precision": 0.9130434782608695,
+  "attribution_accuracy": 0.8571428571428571,
+  "event_macro_f1": 0.4695121951219512,
+  "event_f1_left": 0.5,
+  "event_f1_right": 0.4390243902439024,
+  "timing_hits": 21,
+  "attribution_hits": 18,
+  "pred_score": [
+    13,
+    10
+  ],
+  "true_score": [
+    27,
+    31
+  ],
+  "scoreline_abs_err_left": 14,
+  "scoreline_abs_err_right": 21,
+  "scoreline_abs_err_total": 35,
+  "winner_correct": 0,
+  "pred_winner": "left",
+  "true_winner": "right",
+  "winner_margin_err": 7,
+  "baseline_majority_frame_macro_f1": 0.31011517668259814,
+  "baseline_majority_frame_pos_macro_f1": 0.0,
+  "baseline_majority_event_f1": 0.0,
+  "baseline_random_event_precision": 0.25869565217391305,
+  "baseline_random_event_recall": 0.10258620689655171,
+  "baseline_random_event_f1": 0.14691358024691353,
+  "min_confidence": 0.6,
+  "zone_filter_at_predict": true
+}
