@@ -1,0 +1,85 @@
+{
+  "n_frames_scored": 7161,
+  "n_raw_firings": 560,
+  "n_detections": 37,
+  "frame_macro_f1": 0.7237841659906263,
+  "frame_macro_f1_zone_filtered": 0.7255792914687951,
+  "frame_pos_macro_f1": 0.5991308491062041,
+  "frame_pos_macro_f1_zone_filtered": 0.6012921536481745,
+  "frame_per_class": {
+    "None": {
+      "precision": 0.987339841366687,
+      "recall": 0.9592471843509188,
+      "f1": 0.9730907997594708,
+      "support": 6748
+    },
+    "Left": {
+      "precision": 0.3925619834710744,
+      "recall": 0.6690140845070423,
+      "f1": 0.4947916666666668,
+      "support": 142
+    },
+    "Right": {
+      "precision": 0.6143250688705234,
+      "recall": 0.8228782287822878,
+      "f1": 0.7034700315457414,
+      "support": 271
+    }
+  },
+  "confusion_matrix": [
+    [
+      6473,
+      147,
+      128
+    ],
+    [
+      35,
+      95,
+      12
+    ],
+    [
+      48,
+      0,
+      223
+    ]
+  ],
+  "event_precision": 0.7027027027027027,
+  "event_recall": 0.8387096774193549,
+  "event_f1": 0.7647058823529411,
+  "event_hits": 26,
+  "event_false_alarms": 11,
+  "total_gt_events": 31,
+  "detection_recall": 0.8709677419354839,
+  "detection_precision": 0.7297297297297297,
+  "attribution_accuracy": 0.9629629629629629,
+  "event_macro_f1": 0.7606142728093948,
+  "event_f1_left": 0.7407407407407408,
+  "event_f1_right": 0.7804878048780488,
+  "timing_hits": 27,
+  "attribution_hits": 26,
+  "pred_score": [
+    14,
+    23
+  ],
+  "true_score": [
+    13,
+    18
+  ],
+  "scoreline_abs_err_left": 1,
+  "scoreline_abs_err_right": 5,
+  "scoreline_abs_err_total": 6,
+  "winner_correct": 1,
+  "pred_winner": "right",
+  "true_winner": "right",
+  "winner_margin_err": 4,
+  "baseline_majority_frame_macro_f1": 0.3234356651568529,
+  "baseline_majority_frame_pos_macro_f1": 0.0,
+  "baseline_majority_event_f1": 0.0,
+  "baseline_random_event_precision": 0.1418918918918919,
+  "baseline_random_event_recall": 0.1693548387096774,
+  "baseline_random_event_f1": 0.1544117647058823,
+  "min_confidence": 0.6,
+  "zone_filter_at_predict": false,
+  "best_epoch": 25,
+  "select_on": "frame_macro_f1_zone_filtered"
+}

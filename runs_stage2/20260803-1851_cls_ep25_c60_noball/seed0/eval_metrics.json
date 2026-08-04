@@ -1,0 +1,85 @@
+{
+  "n_frames_scored": 7161,
+  "n_raw_firings": 659,
+  "n_detections": 42,
+  "frame_macro_f1": 0.7326474835758522,
+  "frame_macro_f1_zone_filtered": 0.7342203900067875,
+  "frame_pos_macro_f1": 0.6132396380501758,
+  "frame_pos_macro_f1_zone_filtered": 0.6151856398213873,
+  "frame_per_class": {
+    "None": {
+      "precision": 0.9928825622775801,
+      "recall": 0.9509484291641968,
+      "f1": 0.9714631746272047,
+      "support": 6748
+    },
+    "Left": {
+      "precision": 0.3438485804416404,
+      "recall": 0.7676056338028169,
+      "f1": 0.4749455337690632,
+      "support": 142
+    },
+    "Right": {
+      "precision": 0.6430446194225722,
+      "recall": 0.9040590405904059,
+      "f1": 0.7515337423312884,
+      "support": 271
+    }
+  },
+  "confusion_matrix": [
+    [
+      6417,
+      208,
+      123
+    ],
+    [
+      20,
+      109,
+      13
+    ],
+    [
+      26,
+      0,
+      245
+    ]
+  ],
+  "event_precision": 0.6904761904761905,
+  "event_recall": 0.9354838709677419,
+  "event_f1": 0.7945205479452055,
+  "event_hits": 29,
+  "event_false_alarms": 13,
+  "total_gt_events": 31,
+  "detection_recall": 0.967741935483871,
+  "detection_precision": 0.7142857142857143,
+  "attribution_accuracy": 0.9666666666666667,
+  "event_macro_f1": 0.7918586789554531,
+  "event_f1_left": 0.7741935483870968,
+  "event_f1_right": 0.8095238095238096,
+  "timing_hits": 30,
+  "attribution_hits": 29,
+  "pred_score": [
+    18,
+    24
+  ],
+  "true_score": [
+    13,
+    18
+  ],
+  "scoreline_abs_err_left": 5,
+  "scoreline_abs_err_right": 6,
+  "scoreline_abs_err_total": 11,
+  "winner_correct": 1,
+  "pred_winner": "right",
+  "true_winner": "right",
+  "winner_margin_err": 1,
+  "baseline_majority_frame_macro_f1": 0.3234356651568529,
+  "baseline_majority_frame_pos_macro_f1": 0.0,
+  "baseline_majority_event_f1": 0.0,
+  "baseline_random_event_precision": 0.14047619047619045,
+  "baseline_random_event_recall": 0.19032258064516122,
+  "baseline_random_event_f1": 0.16164383561643833,
+  "min_confidence": 0.6,
+  "zone_filter_at_predict": false,
+  "best_epoch": 20,
+  "select_on": "frame_macro_f1_zone_filtered"
+}

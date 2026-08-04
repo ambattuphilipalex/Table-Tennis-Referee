@@ -1,0 +1,85 @@
+{
+  "n_frames_scored": 7161,
+  "n_raw_firings": 655,
+  "n_detections": 40,
+  "frame_macro_f1": 0.7273002673919233,
+  "frame_macro_f1_zone_filtered": 0.7297535312679573,
+  "frame_pos_macro_f1": 0.6052490847011396,
+  "frame_pos_macro_f1_zone_filtered": 0.6084399294059305,
+  "frame_per_class": {
+    "None": {
+      "precision": 0.9922720247295209,
+      "recall": 0.951393005334914,
+      "f1": 0.9714026327734907,
+      "support": 6748
+    },
+    "Left": {
+      "precision": 0.34459459459459457,
+      "recall": 0.7183098591549296,
+      "f1": 0.4657534246575342,
+      "support": 142
+    },
+    "Right": {
+      "precision": 0.6278481012658228,
+      "recall": 0.915129151291513,
+      "f1": 0.7447447447447448,
+      "support": 271
+    }
+  },
+  "confusion_matrix": [
+    [
+      6420,
+      194,
+      134
+    ],
+    [
+      27,
+      102,
+      13
+    ],
+    [
+      23,
+      0,
+      248
+    ]
+  ],
+  "event_precision": 0.7,
+  "event_recall": 0.9032258064516129,
+  "event_f1": 0.7887323943661972,
+  "event_hits": 28,
+  "event_false_alarms": 12,
+  "total_gt_events": 31,
+  "detection_recall": 0.9354838709677419,
+  "detection_precision": 0.725,
+  "attribution_accuracy": 0.9655172413793104,
+  "event_macro_f1": 0.784072249589491,
+  "event_f1_left": 0.7586206896551724,
+  "event_f1_right": 0.8095238095238096,
+  "timing_hits": 29,
+  "attribution_hits": 28,
+  "pred_score": [
+    16,
+    24
+  ],
+  "true_score": [
+    13,
+    18
+  ],
+  "scoreline_abs_err_left": 3,
+  "scoreline_abs_err_right": 6,
+  "scoreline_abs_err_total": 9,
+  "winner_correct": 1,
+  "pred_winner": "right",
+  "true_winner": "right",
+  "winner_margin_err": 3,
+  "baseline_majority_frame_macro_f1": 0.3234356651568529,
+  "baseline_majority_frame_pos_macro_f1": 0.0,
+  "baseline_majority_event_f1": 0.0,
+  "baseline_random_event_precision": 0.14375,
+  "baseline_random_event_recall": 0.18548387096774185,
+  "baseline_random_event_f1": 0.1619718309859155,
+  "min_confidence": 0.6,
+  "zone_filter_at_predict": false,
+  "best_epoch": 20,
+  "select_on": "frame_macro_f1_zone_filtered"
+}
