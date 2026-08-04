@@ -7,14 +7,14 @@ ground-truth ball position over a game or test video.
   (d) GT vs predicted overlay     -> PRED/TRUE scorelines, red box = true ball
 
 Run from the repo root:
-    python src/overlay_scores.py --game game_3 --max-frames 3000
-    python src/overlay_scores.py --game test_6
+    python src/overlay_scores.py --game test_6 --arm cls \
+  --model runs_stage2/20260730-1750_cls_ep25_c60/seed0/ckpt_best.pt \
+  --min-conf 0.6
 """
 import argparse
 import json
 import sys
 from pathlib import Path
-
 import cv2
 import torch
 from torch.utils.data import DataLoader
@@ -30,8 +30,8 @@ PRED_COLOR = (0, 200, 255)      # orange  - predicted score
 TRUE_COLOR = (0, 255, 0)        # green   - true score
 LINE_COLOR = (255, 255, 255)
 HOLD_FRAMES = 60
-CLUSTER_GAP = 120               
-CONFLICT_GAP = 300              
+CLUSTER_GAP = 90
+CONFLICT_GAP = 180          
 
 
 def parse_args():
@@ -41,7 +41,7 @@ def parse_args():
     p.add_argument("--arm", choices=["reg", "cls"], default="cls")
     p.add_argument("--model", default="score_predictor_cls_sequential.pth")
     p.add_argument("--cache-root", default="data/dino_cache")
-    p.add_argument("--runs-dir", default="runs/20260704-1040_baseline")
+    p.add_argument("--runs-dir", default="runs/20260707-0746_false_ground_truth_eliminated")
     p.add_argument("--out", default=None, help="output mp4 (default annotated_<game>.mp4)")
     p.add_argument("--min-conf", type=float, default=0.65)
     p.add_argument("--chunk-len", type=int, default=256)
