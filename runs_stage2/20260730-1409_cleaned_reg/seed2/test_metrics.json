@@ -1,0 +1,84 @@
+{
+  "n_frames_scored": 6826,
+  "n_raw_firings": 347,
+  "n_detections": 21,
+  "frame_macro_f1": 0.2970669608324194,
+  "frame_macro_f1_zone_filtered": 0.30261423176566443,
+  "frame_per_class": {
+    "None": {
+      "precision": 0.867564534231201,
+      "recall": 0.5209772535804549,
+      "f1": 0.6510158964101483,
+      "support": 5935
+    },
+    "Left": {
+      "precision": 0.05813953488372093,
+      "recall": 0.36163522012578614,
+      "f1": 0.10017421602787457,
+      "support": 318
+    },
+    "Right": {
+      "precision": 0.10124610591900311,
+      "recall": 0.2268760907504363,
+      "f1": 0.14001077005923532,
+      "support": 573
+    }
+  },
+  "confusion_matrix": [
+    [
+      3092,
+      1742,
+      1101
+    ],
+    [
+      150,
+      115,
+      53
+    ],
+    [
+      322,
+      121,
+      130
+    ]
+  ],
+  "event_precision": 0.38095238095238093,
+  "event_recall": 0.13793103448275862,
+  "event_f1": 0.20253164556962022,
+  "event_hits": 8,
+  "event_false_alarms": 13,
+  "total_gt_events": 58,
+  "pred_score": [
+    10,
+    11
+  ],
+  "true_score": [
+    27,
+    31
+  ],
+  "scoreline_abs_err_left": 17,
+  "scoreline_abs_err_right": 20,
+  "scoreline_abs_err_total": 37,
+  "baseline_majority_frame_macro_f1": 0.31005929524854375,
+  "baseline_majority_event_f1": 0.0,
+  "baseline_random_event_precision": 0.24761904761904763,
+  "baseline_random_event_recall": 0.08965517241379309,
+  "baseline_random_event_f1": 0.13164556962025317,
+  "min_confidence": 0.9,
+  "zone_filter_at_predict": true,
+  "frame_pos_macro_f1": 0.12009249304355495,
+  "frame_pos_macro_f1_zone_filtered": 0.09496187720371671,
+  "detection_recall": 0.20689655172413793,
+  "detection_precision": 0.5714285714285714,
+  "attribution_accuracy": 0.5833333333333334,
+  "event_macro_f1": 0.2001287001287001,
+  "event_f1_left": 0.16216216216216217,
+  "event_f1_right": 0.23809523809523805,
+  "timing_hits": 12,
+  "attribution_hits": 7,
+  "winner_correct": 1,
+  "pred_winner": "right",
+  "true_winner": "right",
+  "winner_margin_err": 3,
+  "baseline_majority_frame_pos_macro_f1": 0.0,
+  "_backfilled": true
+}

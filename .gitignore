@@ -10,6 +10,11 @@ uncond_text.pt
 __pycache__/
 *.pyc
 .DS_Store
+*.csv
+*.mp4
+*.pt
+*.pth
+*.sh
 
 
 # credentials
@@ -21,9 +26,11 @@ config/platform/local_akopyane.yaml
 
 # third-party dependencies
 third_party/
-
+dino_cache_784/
 dino_cache/
 runs/
+logs/
+experiments/
 
 data/OpenTT/videos
 

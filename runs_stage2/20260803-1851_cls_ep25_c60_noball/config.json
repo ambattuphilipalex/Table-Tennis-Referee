@@ -1,0 +1,37 @@
+{
+  "arm": "cls",
+  "train_games": [
+    "game_1",
+    "game_2",
+    "game_4",
+    "game_5"
+  ],
+  "eval_games": [
+    "game_3"
+  ],
+  "epochs": 25,
+  "val_every": 5,
+  "min_conf": 0.6,
+  "select_on": "frame_macro_f1_zone_filtered",
+  "note": "",
+  "no_countdown_shift": false,
+  "use_ball": false,
+  "exp_id": "cls_ep25_c60_noball",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "test_games": [
+    "test_1",
+    "test_2",
+    "test_3",
+    "test_4",
+    "test_5",
+    "test_6",
+    "test_7"
+  ],
+  "device": "cpu",
+  "baseline_run": "runs/20260707-0746_false_ground_truth_eliminated",
+  "started": "2026-08-03T18:51:06"
+}

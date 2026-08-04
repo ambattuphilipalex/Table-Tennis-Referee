@@ -9,7 +9,12 @@ from torch.utils.data import DataLoader
 from ball_head import BallHead
 from cache_dataset import CACHE_ROOT, CachedBallDataset
 from metrics import DEFAULT_THRESHOLDS, ORIG_WH, denormalize, mean_predictor_baseline, pixel_errors, summarize
-
+if torch.cuda.is_available():
+    device = "cuda"
+elif torch.backends.mps.is_available():
+    device = "mps"
+else:
+    device = "cpu"
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument("--ckpt", type=Path, required=True)
@@ -76,22 +81,27 @@ def main() -> None:
     for game in args.games:
         ds = load_dataset(game, args.cache_root)
         wh = ds.meta.get("orig_wh", ORIG_WH)
+        keep = torch.as_tensor(ds.idx, dtype=torch.long)
         pred = predict(model, ds, device)
-        errs = pixel_errors(pred, ds.ball.float(), wh)
+        assert len(pred) == len(keep), f"{game}: {len(pred)} preds vs {len(keep)} rows"
+        errs = pixel_errors(pred, ds.ball[keep].float(), wh)
         per_game[game] = summarize(errs, args.thresholds)
         all_errs.append(errs)
         csv_path = out_dir / f"{game}_predictions.csv"
-        write_predictions_csv(csv_path, ds.frames, pred, wh, errs)
-        print(f"wrote {csv_path}")
+        write_predictions_csv(csv_path, ds.frames[keep], pred, wh, errs)  # <- was ds.frames
+        print(f"wrote {csv_path}  ({len(keep)} rows)")
 
     overall = summarize(torch.cat(all_errs), args.thresholds)
 
+    ds_cache: dict[str, CachedBallDataset] = {}
+
+    def filtered_ball(g: str) -> torch.Tensor:
+        ds = ds_cache.setdefault(g, load_dataset(g, args.cache_root))
+        return ds.ball[torch.as_tensor(ds.idx, dtype=torch.long)].float()
+
     train_games = ckpt["config"]["train_games"]
-    baseline = None
-    train_ball = torch.cat([load_dataset(g, args.cache_root).ball.float()
-                            for g in train_games])
-    eval_ball = torch.cat([load_dataset(g, args.cache_root).ball.float()
-                           for g in args.games])
+    train_ball = torch.cat([filtered_ball(g) for g in train_games])
+    eval_ball = torch.cat([filtered_ball(g) for g in args.games])
     baseline = mean_predictor_baseline(train_ball, eval_ball, thresholds=args.thresholds)
 
     header = ["game".ljust(12), "n".rjust(7), "mean_px".rjust(9),

@@ -1,0 +1,53 @@
+{
+  "n_seeds": 1,
+  "frame_macro_f1": {
+    "mean": 0.4409356725146199,
+    "sd": 0.0,
+    "spread": 0.0,
+    "values": [
+      0.4409356725146199
+    ]
+  },
+  "frame_macro_f1_zone_filtered": {
+    "mean": 0.4408888888888889,
+    "sd": 0.0,
+    "spread": 0.0,
+    "values": [
+      0.4408888888888889
+    ]
+  },
+  "event_f1": {
+    "mean": 1.0,
+    "sd": 0.0,
+    "spread": 0.0,
+    "values": [
+      1.0
+    ]
+  },
+  "event_precision": {
+    "mean": 1.0,
+    "sd": 0.0,
+    "spread": 0.0,
+    "values": [
+      1.0
+    ]
+  },
+  "event_recall": {
+    "mean": 1.0,
+    "sd": 0.0,
+    "spread": 0.0,
+    "values": [
+      1.0
+    ]
+  },
+  "scoreline_abs_err_total": {
+    "mean": 0,
+    "sd": 0.0,
+    "spread": 0,
+    "values": [
+      0
+    ]
+  },
+  "baseline_majority_frame_macro_f1": 0.3320329432162982,
+  "baseline_random_event_f1": 0.175
+}
