@@ -149,6 +149,12 @@ data/
 Requires PyTorch, `timm`, `opencv-python`, `matplotlib`, `numpy`. Run everything from the
 repository root.
 
+**Hardware.** Step 1 needs a CUDA GPU and takes several hours; the resulting token caches total
+roughly 25 GB at 518 px across the 12 videos, and game_2 alone is ~18 GB. The caches are opened
+with `mmap=True`, so RAM is not the constraint provided nothing indexes the whole tensor at once,
+but the disk space is required. Everything after step 1 runs comfortably on CPU: Stage-2 training
+is a small GRU over cached features, and a 3-seed run takes minutes.
+
 ```bash
 # 0. data (~several GB of video)
 python fetch_data.py
@@ -173,18 +179,35 @@ python src/run_experiment.py --exp-id gru_bidir_cls --arm cls --seeds 0 1 2 \
     --test-games test_1 test_2 test_3 test_4 test_5 test_6 test_7
 
 python src/run_experiment.py --exp-id gru_reg --arm reg --seeds 0 1 2 \
+    --epochs 60 --min-conf 0.9 \
     --test-games test_1 test_2 test_3 test_4 test_5 test_6 test_7
 
-# 6. qualitative check
+# 6. per-match winner accuracy (the pooled test scoreline sums seven separate
+#    matches, so the winner is only meaningful per video)
+for g in test_1 test_2 test_3 test_4 test_5 test_6 test_7; do
+  python src/run_experiment.py --exp-id w_$g --arm cls --seeds 0 \
+      --epochs 25 --min-conf 0.6 --test-games $g
+done
+
+for g in test_1 test_2 test_3 test_4 test_5 test_6 test_7; do
+  python src/run_experiment.py --exp-id regw_$g --arm reg --seeds 0 \
+      --epochs 60 --min-conf 0.9 --test-games $g
+done
+
+# 7. qualitative check
 python src/overlay_scores.py --game test_6 --arm cls \
     --model runs_stage2/<run>/seed0/ckpt_best.pt --min-conf 0.6
 python src/overlay.py --ckpt runs/<run>/ckpt_best.pt --game game_5 --worst-k 24
 ```
 
-`BASELINE_RUN` at the top of `run_experiment.py` must point at a Stage-1 run folder containing
-`<game>_predictions.csv` for **every** game, test videos included. If a CSV is missing, the
-coordinate loader returns an empty dict, every frame falls back to a default whose `y = 0.0` fails
-the zone filter, and the affected split silently produces zero detections.
+Before step 5, set `BASELINE_RUN` at the top of `run_experiment.py` to the Stage-1 run folder from
+step 3. It must contain `<game>_predictions.csv` for **every** game, test videos included. If a CSV
+is missing the coordinate loader returns an empty dict, every frame falls back to a default whose
+`y = 0.0` fails the zone filter, and the affected split silently produces zero detections with no
+error.
+
+Steps 5 and 6 write to `runs_stage2/<timestamp>_<exp-id>/`, one folder per seed with
+`metrics.jsonl`, `curves.png`, `eval_metrics.json`, `test_metrics.json` and `ckpt_best.pt`.
 
 ---
 
