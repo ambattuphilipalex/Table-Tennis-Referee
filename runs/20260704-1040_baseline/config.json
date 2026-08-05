@@ -1,0 +1,27 @@
+{
+  "train_games": [
+    "game_1",
+    "game_2",
+    "game_3",
+    "game_4"
+  ],
+  "val_games": [
+    "game_5"
+  ],
+  "cache_root": "/home/shared/Table-Tennis-Referee/data/dino_cache",
+  "loss": "smooth_l1",
+  "beta": 0.05,
+  "epochs": 40,
+  "batch_size": 128,
+  "lr": 0.0003,
+  "weight_decay": 0.05,
+  "warmup_steps": 500,
+  "clip": 1.0,
+  "seed": 42,
+  "num_workers": 4,
+  "no_amp": false,
+  "tag": "baseline",
+  "device": "cuda",
+  "amp": true,
+  "run_dir": "/home/shared/Table-Tennis-Referee/runs/20260704-1040_baseline"
+}
