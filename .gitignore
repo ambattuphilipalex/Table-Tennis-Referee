@@ -28,8 +28,9 @@ config/platform/local_akopyane.yaml
 third_party/
 dino_cache_784/
 dino_cache/
-runs/
 logs/
+runs/
+runs_stage2/
 experiments/
 
 data/OpenTT/videos
